@@ -1,0 +1,45 @@
+# Core dependencies
+anthropic>=0.18.0
+openai>=1.0.0
+
+# ArXiv and paper processing
+arxiv>=2.1.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# TeX/LaTeX processing
+pylatexenc>=2.10
+TexSoup>=0.3.1
+
+# PDF processing (fallback)
+PyPDF2>=3.0.0
+pdfplumber>=0.10.0
+pypdf>=3.17.0
+
+# Vector store and embeddings
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4
+
+# Graph and network analysis
+networkx>=3.0
+matplotlib>=3.7.0
+plotly>=5.18.0
+
+# Web framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+gradio>=4.0.0
+streamlit>=1.28.0
+
+# Data handling
+pydantic>=2.0.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+pandas>=2.0.0
+
+# Utilities
+tqdm>=4.66.0
+python-magic>=0.4.27
+aiofiles>=23.0.0
+httpx>=0.25.0

@@ -1,0 +1,81 @@
+# Deep Research Agent Configuration
+
+# LLM Settings
+llm:
+  provider: "anthropic"  # anthropic, openai, or local
+  model: "claude-sonnet-4-5-20250929"
+  api_key: "YOUR_API_KEY_HERE"
+  max_tokens: 4096
+  temperature: 0.7
+
+# OpenAI (optional)
+openai:
+  api_key: "YOUR_OPENAI_API_KEY"
+  model: "gpt-4-turbo-preview"
+
+# Data Sources
+data_sources:
+  arxiv:
+    enabled: true
+    prefer_tex_source: true  # 优先下载 TeX 源文件
+    fallback_to_pdf: true    # TeX 不可用时降级到 PDF
+    max_results: 10
+
+  semantic_scholar:
+    enabled: true
+    api_key: ""  # Optional, higher rate limits with API key
+
+  local:
+    enabled: true
+    watch_folder: "./data/papers"
+
+# Processing Settings
+processing:
+  tex_parser:
+    extract_comments: true      # 提取 TeX 注释
+    extract_equations: true     # 提取公式
+    extract_citations: true     # 提取引用
+    extract_figures: true       # 提取图表说明
+    preserve_structure: true    # 保留文档结构
+
+  pdf_parser:
+    extract_images: false
+    ocr_enabled: false
+    max_pages: 100
+
+# Vector Database
+vector_db:
+  provider: "chromadb"  # chromadb or faiss
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  chunk_size: 512
+  chunk_overlap: 50
+  collection_name: "research_papers"
+
+# Knowledge Graph
+knowledge_graph:
+  enabled: true
+  min_similarity: 0.7
+  max_connections: 20
+
+# Output Settings
+output:
+  formats:
+    - markdown
+    - json
+  reports_dir: "./data/reports"
+  include_visualizations: true
+
+# Web Interface
+web:
+  host: "0.0.0.0"
+  port: 7860
+  enable_gradio: true
+  enable_api: true
+
+# Storage Paths
+storage:
+  papers: "./data/papers"
+  metadata: "./data/metadata"
+  vector_db: "./data/vector_db"
+  reports: "./data/reports"
+  cache: "./data/cache"
