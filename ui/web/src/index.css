@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  background: #0d0d0d;
+  color: #e4e4e7;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1a1a1a; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+
+/* Markdown 样式 */
+.prose-terminal h1, .prose-terminal h2, .prose-terminal h3 {
+  color: #22d3ee;
+}
+.prose-terminal code {
+  background: #1a1a2e;
+  color: #a78bfa;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+.prose-terminal pre {
+  background: #1a1a2e;
+  border: 1px solid #2a2a2a;
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+}
