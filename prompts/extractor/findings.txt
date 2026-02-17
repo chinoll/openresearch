@@ -1,0 +1,31 @@
+总结论文的主要发现和实验结果。
+
+**标题**: {{title}}
+
+**摘要**:
+{{abstract}}
+
+**结果相关章节**:
+{{results_sections}}
+
+**图表数量**: {{figures_count}}
+
+请总结：
+1. 主要实验结果
+2. 关键发现
+3. 性能提升
+4. 意外发现（如有）
+
+以 JSON 格式输出：
+```json
+{
+  "findings": [
+    {
+      "finding": "发现描述",
+      "evidence": "支持证据",
+      "importance": "重要性"
+    }
+  ],
+  "performance_improvements": "性能提升总结"
+}
+```

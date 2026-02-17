@@ -12,6 +12,7 @@ import re
 sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from prompts.loader import load as load_prompt
 
 
 class KnowledgeExtractorAgent(BaseAgent):
@@ -97,34 +98,12 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取核心贡献"""
         self.log("Extracting core contributions...")
 
-        prompt = f"""分析以下论文，提取其核心贡献和创新点。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-**章节信息**:
-{self._format_sections_brief(paper_data.get('sections', []))}
-
-请识别并列举论文的核心贡献（通常是2-5个主要贡献）。对每个贡献，说明：
-1. 贡献内容
-2. 创新性（与前人工作的区别）
-3. 重要性
-
-以 JSON 格式输出：
-```json
-{{
-  "contributions": [
-    {{
-      "title": "贡献简短标题",
-      "description": "详细描述",
-      "novelty": "创新点说明",
-      "significance": "重要性评估"
-    }}
-  ]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/contributions",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+            sections_brief=self._format_sections_brief(paper_data.get('sections', [])),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'contributions': []}).get('contributions', [])
@@ -133,35 +112,13 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取方法论"""
         self.log("Extracting methodology...")
 
-        prompt = f"""分析论文使用的研究方法和技术。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-**方法相关章节**:
-{self._extract_method_sections(paper_data.get('sections', []))}
-
-**公式数量**: {paper_data.get('equations_count', 0)}
-
-请详细说明：
-1. 主要方法和技术
-2. 算法/模型架构
-3. 实验设计
-4. 评估指标
-
-以 JSON 格式输出：
-```json
-{{
-  "approach": "总体方法概述",
-  "techniques": ["技术1", "技术2", ...],
-  "model_architecture": "模型架构描述",
-  "datasets": ["数据集1", "数据集2", ...],
-  "evaluation_metrics": ["指标1", "指标2", ...],
-  "implementation_details": "实现细节"
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/methodology",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+            method_sections=self._extract_method_sections(paper_data.get('sections', [])),
+            equations_count=str(paper_data.get('equations_count', 0)),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={})
@@ -170,28 +127,12 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取研究问题"""
         self.log("Extracting research questions...")
 
-        prompt = f"""识别论文试图回答的核心研究问题。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-**引言部分**:
-{self._extract_intro_sections(paper_data.get('sections', []))}
-
-请列出论文的核心研究问题（通常1-3个）。
-
-以 JSON 格式输出：
-```json
-{{
-  "research_questions": [
-    "研究问题1",
-    "研究问题2",
-    ...
-  ]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/research_questions",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+            intro_sections=self._extract_intro_sections(paper_data.get('sections', [])),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'research_questions': []}).get('research_questions', [])
@@ -200,37 +141,13 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取主要发现和结果"""
         self.log("Extracting key findings...")
 
-        prompt = f"""总结论文的主要发现和实验结果。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-**结果相关章节**:
-{self._extract_results_sections(paper_data.get('sections', []))}
-
-**图表数量**: {len(paper_data.get('figures', [])) + len(paper_data.get('tables', []))}
-
-请总结：
-1. 主要实验结果
-2. 关键发现
-3. 性能提升
-4. 意外发现（如有）
-
-以 JSON 格式输出：
-```json
-{{
-  "findings": [
-    {{
-      "finding": "发现描述",
-      "evidence": "支持证据",
-      "importance": "重要性"
-    }}
-  ],
-  "performance_improvements": "性能提升总结"
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/findings",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+            results_sections=self._extract_results_sections(paper_data.get('sections', [])),
+            figures_count=str(len(paper_data.get('figures', [])) + len(paper_data.get('tables', []))),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'findings': []}).get('findings', [])
@@ -239,32 +156,12 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取局限性"""
         self.log("Extracting limitations...")
 
-        prompt = f"""识别论文的局限性和不足。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-**讨论/结论章节**:
-{self._extract_discussion_sections(paper_data.get('sections', []))}
-
-请列出论文的主要局限性，包括：
-- 方法的局限
-- 实验的局限
-- 假设的限制
-- 适用范围的限制
-
-以 JSON 格式输出：
-```json
-{{
-  "limitations": [
-    "局限性1",
-    "局限性2",
-    ...
-  ]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/limitations",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+            discussion_sections=self._extract_discussion_sections(paper_data.get('sections', [])),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'limitations': []}).get('limitations', [])
@@ -273,22 +170,11 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取未来工作方向"""
         self.log("Extracting future work...")
 
-        prompt = f"""总结论文提出的未来研究方向。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**结论章节**:
-{self._extract_conclusion_sections(paper_data.get('sections', []))}
-
-请总结作者提出的未来研究方向和开放问题。
-
-以 JSON 格式输出：
-```json
-{{
-  "future_work": "未来工作方向的总结",
-  "open_questions": ["开放问题1", "开放问题2", ...]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/future_work",
+            title=paper_data.get('title', 'N/A'),
+            conclusion_sections=self._extract_conclusion_sections(paper_data.get('sections', [])),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         result = self._parse_json_response(response, default={})
@@ -298,21 +184,11 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取关键词"""
         self.log("Extracting keywords...")
 
-        prompt = f"""从论文中提取关键技术术语和概念。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-请提取10-15个最重要的技术关键词。
-
-以 JSON 格式输出：
-```json
-{{
-  "keywords": ["keyword1", "keyword2", ...]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/keywords",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'keywords': []}).get('keywords', [])
@@ -321,27 +197,11 @@ class KnowledgeExtractorAgent(BaseAgent):
         """提取核心概念及其关系"""
         self.log("Extracting key concepts...")
 
-        prompt = f"""识别论文中的核心概念及其定义。
-
-**标题**: {paper_data.get('title', 'N/A')}
-
-**摘要**:
-{paper_data.get('abstract', 'N/A')}
-
-请识别论文中引入或使用的核心概念（5-10个），包括其定义和在论文中的作用。
-
-以 JSON 格式输出：
-```json
-{{
-  "concepts": [
-    {{
-      "name": "概念名称",
-      "definition": "概念定义",
-      "role": "在论文中的作用"
-    }}
-  ]
-}}
-```"""
+        prompt = load_prompt(
+            "extractor/concepts",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', 'N/A'),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'concepts': []}).get('concepts', [])
@@ -350,24 +210,14 @@ class KnowledgeExtractorAgent(BaseAgent):
         """生成综合摘要"""
         self.log("Generating comprehensive summary...")
 
-        prompt = f"""基于提取的信息，生成一个全面的论文摘要（300字以内）。
-
-**论文**: {paper_data.get('title', 'N/A')}
-
-**已提取信息**:
-- 核心贡献: {len(extracted.get('contributions', []))} 项
-- 方法: {extracted.get('methodology', {}).get('approach', 'N/A')[:100]}
-- 研究问题: {len(extracted.get('research_questions', []))} 个
-- 主要发现: {len(extracted.get('findings', []))} 项
-
-请生成一个结构化的摘要，包含：
-1. 研究背景和动机
-2. 主要贡献
-3. 使用的方法
-4. 关键结果
-5. 影响和意义
-
-直接输出摘要文本即可。"""
+        prompt = load_prompt(
+            "extractor/summary",
+            title=paper_data.get('title', 'N/A'),
+            contributions_count=str(len(extracted.get('contributions', []))),
+            methodology_approach=extracted.get('methodology', {}).get('approach', 'N/A')[:100],
+            questions_count=str(len(extracted.get('research_questions', []))),
+            findings_count=str(len(extracted.get('findings', []))),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -376,9 +226,7 @@ class KnowledgeExtractorAgent(BaseAgent):
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
-        return """你是一个专业的学术论文分析助手，擅长从论文中提取核心知识和洞察。
-你的任务是深入分析论文内容，准确识别和提取关键信息。
-请始终以结构化的 JSON 格式输出结果，确保格式正确。"""
+        return load_prompt("system/extractor")
 
     def _format_sections_brief(self, sections: List[Dict]) -> str:
         """简要格式化章节"""

@@ -1,0 +1,29 @@
+分析论文使用的研究方法和技术。
+
+**标题**: {{title}}
+
+**摘要**:
+{{abstract}}
+
+**方法相关章节**:
+{{method_sections}}
+
+**公式数量**: {{equations_count}}
+
+请详细说明：
+1. 主要方法和技术
+2. 算法/模型架构
+3. 实验设计
+4. 评估指标
+
+以 JSON 格式输出：
+```json
+{
+  "approach": "总体方法概述",
+  "techniques": ["技术1", "技术2"],
+  "model_architecture": "模型架构描述",
+  "datasets": ["数据集1", "数据集2"],
+  "evaluation_metrics": ["指标1", "指标2"],
+  "implementation_details": "实现细节"
+}
+```

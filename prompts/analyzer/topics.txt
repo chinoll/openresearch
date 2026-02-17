@@ -1,0 +1,25 @@
+分析论文的研究主题和领域。
+
+**标题**: {{title}}
+
+**摘要**:
+{{abstract}}
+
+**关键词**: {{keywords}}
+
+请识别：
+1. 主要研究领域（如 NLP, CV, RL 等）
+2. 具体研究方向（如 Transformers, Object Detection 等）
+3. 技术栈和方法类别
+4. 应用场景
+
+以 JSON 格式输出：
+```json
+{
+  "primary_field": "主要领域",
+  "sub_fields": ["子领域1", "子领域2"],
+  "research_direction": "具体研究方向",
+  "technical_stack": ["技术1", "技术2"],
+  "application_domains": ["应用领域1", "应用领域2"]
+}
+```

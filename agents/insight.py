@@ -11,6 +11,7 @@ import json
 sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from prompts.loader import load as load_prompt
 from core.ideas_manager import IdeasManager, Idea
 
 
@@ -119,27 +120,12 @@ class InsightAgent(BaseAgent):
 
     async def _enhance_idea(self, title: str, content: str, paper_id: str = None) -> Dict:
         """使用 AI 增强想法"""
-        prompt = f"""分析以下研究想法，帮助提取关键标签和优化内容。
-
-**标题**: {title}
-
-**内容**:
-{content}
-
-**论文ID**: {paper_id or 'N/A'}
-
-请提供：
-1. 3-5个关键标签（技术术语、概念、方法等）
-2. 精炼后的内容（保持原意，但更清晰、结构化）
-
-以 JSON 格式输出：
-```json
-{{
-  "tags": ["tag1", "tag2", "tag3"],
-  "refined_content": "精炼后的内容...",
-  "key_concepts": ["概念1", "概念2"]
-}}
-```"""
+        prompt = load_prompt(
+            "insight/enhance_idea",
+            title=title,
+            content=content,
+            paper_id=paper_id or 'N/A',
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={'tags': [], 'refined_content': content})
@@ -225,20 +211,12 @@ class InsightAgent(BaseAgent):
             for i, idea in enumerate(related_ideas)
         ])
 
-        prompt = f"""分析以下想法之间的关系：
-
-**主要想法**: {main_idea.title}
-{main_idea.content[:300]}
-
-**相关想法**:
-{related_text}
-
-请分析：
-1. 这些想法之间有什么共同点？
-2. 它们是互补、冲突还是延续关系？
-3. 是否可以合并或需要进一步区分？
-
-用2-3段话简要分析。"""
+        prompt = load_prompt(
+            "insight/analyze_relationships",
+            main_idea_title=main_idea.title,
+            main_idea_content=main_idea.content[:300],
+            related_text=related_text,
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -305,17 +283,13 @@ class InsightAgent(BaseAgent):
 
     async def _analyze_idea_update_need(self, idea: Idea, new_paper_data: Dict) -> str:
         """分析想法是否需要更新"""
-        prompt = f"""分析新论文是否与已有想法相关，是否需要更新想法。
-
-**已有想法**: {idea.title}
-{idea.content[:200]}
-
-**新论文**: {new_paper_data.get('title', 'N/A')}
-摘要: {new_paper_data.get('abstract', 'N/A')[:300]}
-
-请简要说明（1-2句话）：
-1. 新论文是否与该想法相关？
-2. 是否建议更新想法？为什么？"""
+        prompt = load_prompt(
+            "insight/suggest_updates",
+            idea_title=idea.title,
+            idea_content=idea.content[:200],
+            paper_title=new_paper_data.get('title', 'N/A'),
+            paper_abstract=new_paper_data.get('abstract', 'N/A')[:300],
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -363,19 +337,11 @@ class InsightAgent(BaseAgent):
         ])
 
         topic_hint = f"\n**关注主题**: {topic}\n" if topic else ""
-
-        prompt = f"""综合以下研究想法，提取高层洞察和模式。
-{topic_hint}
-**想法列表**:
-{ideas_text}
-
-请提供：
-1. 核心主题和模式
-2. 想法之间的联系
-3. 潜在的研究方向
-4. 可能的创新点
-
-用3-4段话总结。"""
+        prompt = load_prompt(
+            "insight/synthesize",
+            topic_hint=topic_hint,
+            ideas_text=ideas_text,
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -444,21 +410,13 @@ class InsightAgent(BaseAgent):
             for i, idea in enumerate(ideas)
         ])
 
-        prompt = f"""回顾一次研究阅读会话。
-
-**阅读模式**: {mode_desc}
-**论文数量**: {len(session.papers)}
-**产生想法**: {len(ideas)}
-
-**想法列表**:
-{ideas_text}
-
-请总结：
-1. 这次阅读的主要收获
-2. 想法的演进过程
-3. 下一步研究方向建议
-
-用3段话总结。"""
+        prompt = load_prompt(
+            "insight/session_review",
+            mode_desc=mode_desc,
+            papers_count=str(len(session.papers)),
+            ideas_count=str(len(ideas)),
+            ideas_text=ideas_text,
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -480,9 +438,7 @@ class InsightAgent(BaseAgent):
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
-        return """你是一个研究助手，帮助用户管理和发展研究想法。
-你的任务是识别想法之间的联系，提供建设性的建议，帮助用户深化理解。
-请保持简洁、有洞察力。"""
+        return load_prompt("system/insight")
 
     def _parse_json_response(self, response: str, default: Dict = None) -> Dict:
         """解析 JSON 响应"""

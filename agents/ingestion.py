@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
 from core.arxiv_downloader import ArxivDownloader
 from core.tex_parser import TeXParser, TexDocument
+from prompts.loader import load as load_prompt
 
 
 class PaperIngestionAgent(BaseAgent):
@@ -191,9 +192,7 @@ class PaperIngestionAgent(BaseAgent):
         # 构建分析提示词
         prompt = self._build_analysis_prompt(parsed_data)
 
-        system_prompt = """你是一个专业的学术论文分析助手。
-你的任务是深入分析论文内容，提取关键信息。
-请以结构化的 JSON 格式输出分析结果。"""
+        system_prompt = load_prompt("system/ingestion")
 
         try:
             response = self.call_llm(prompt, system_prompt)
@@ -219,36 +218,16 @@ class PaperIngestionAgent(BaseAgent):
 
     def _build_analysis_prompt(self, parsed_data: Dict) -> str:
         """构建 AI 分析的提示词"""
-        prompt = f"""请分析以下论文内容：
-
-**标题**: {parsed_data.get('title', 'N/A')}
-
-**作者**: {', '.join(parsed_data.get('authors', []))}
-
-**摘要**:
-{parsed_data.get('abstract', 'N/A')}
-
-**章节结构**:
-{self._format_sections(parsed_data.get('sections', []))}
-
-**引用数量**: {len(parsed_data.get('citations', []))}
-**公式数量**: {parsed_data.get('equations_count', 0)}
-**图表数量**: {len(parsed_data.get('figures', [])) + len(parsed_data.get('tables', []))}
-
-请提供以下分析（以 JSON 格式输出）：
-
-{{
-    "summary": "简洁的论文总结（3-5句话）",
-    "key_contributions": ["核心贡献1", "核心贡献2", ...],
-    "methodology": "使用的主要方法和技术",
-    "research_questions": ["研究问题1", "研究问题2", ...],
-    "limitations": ["局限性1", "局限性2", ...],
-    "future_work": "未来研究方向",
-    "keywords": ["关键词1", "关键词2", ...],
-    "research_area": "研究领域（如：NLP, CV, RL等）"
-}}
-"""
-        return prompt
+        return load_prompt(
+            "ingestion/analyze_paper",
+            title=parsed_data.get('title', 'N/A'),
+            authors=', '.join(parsed_data.get('authors', [])),
+            abstract=parsed_data.get('abstract', 'N/A'),
+            sections=self._format_sections(parsed_data.get('sections', [])),
+            citations_count=str(len(parsed_data.get('citations', []))),
+            equations_count=str(parsed_data.get('equations_count', 0)),
+            figures_count=str(len(parsed_data.get('figures', [])) + len(parsed_data.get('tables', []))),
+        )
 
     def _format_sections(self, sections: list) -> str:
         """格式化章节列表"""

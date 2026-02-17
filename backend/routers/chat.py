@@ -16,21 +16,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import anthropic
 from backend.tools import TOOLS
+from prompts.loader import load as load_prompt
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-SYSTEM_PROMPT = """你是 OpenResearch 的 AI 助手，帮助用户管理学术论文研究过程。
-
-你可以通过工具来：
-- 下载和查询论文
-- 记录阅读洞察
-- 管理研究疑问
-- 记录研究想法
-- 管理阅读会话
-
-请用中文回复，保持简洁。调用工具后，给出简短的确认和说明。
-如果用户的请求不清晰，先进行澄清再调用工具。"""
+SYSTEM_PROMPT = load_prompt("system/chat_assistant")
 
 
 class Message(BaseModel):

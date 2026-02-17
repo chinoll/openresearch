@@ -1,0 +1,23 @@
+对比分析以下 {{papers_count}} 篇论文：
+
+{{papers_formatted}}
+
+请从以下方面对比：
+1. 研究问题的异同
+2. 方法的差异
+3. 各自的优势和不足
+4. 互补性或竞争关系
+
+以 JSON 格式输出：
+```json
+{
+  "commonalities": ["共同点1", "共同点2"],
+  "differences": ["差异1", "差异2"],
+  "comparative_advantages": {
+    "paper1_id": ["优势1", "优势2"],
+    "paper2_id": ["优势1", "优势2"]
+  },
+  "relationship": "竞争/互补/延续",
+  "summary": "对比总结"
+}
+```

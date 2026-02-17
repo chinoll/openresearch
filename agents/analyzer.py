@@ -11,6 +11,7 @@ import json
 sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from prompts.loader import load as load_prompt
 from core.vector_store import VectorStore
 from core.knowledge_graph import KnowledgeGraph
 
@@ -187,22 +188,12 @@ class RelationAnalyzerAgent(BaseAgent):
 
         similar_titles = [p['metadata'].get('title', 'Unknown') for p in similar_papers]
 
-        prompt = f"""分析以下论文与相似论文的关系：
-
-**目标论文**: {paper_data.get('title')}
-
-**相似论文**:
-{chr(10).join(f"{i+1}. {title}" for i, title in enumerate(similar_titles))}
-
-**目标论文摘要**:
-{paper_data.get('abstract', '')[:500]}
-
-请分析：
-1. 这些论文的共同点是什么？
-2. 主要的研究方向或主题是什么？
-3. 它们之间的主要差异是什么？
-
-请用2-3段话总结。"""
+        prompt = load_prompt(
+            "analyzer/similarity",
+            title=paper_data.get('title', 'N/A'),
+            similar_papers_list="\n".join(f"{i+1}. {title}" for i, title in enumerate(similar_titles)),
+            abstract=paper_data.get('abstract', '')[:500],
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -211,31 +202,12 @@ class RelationAnalyzerAgent(BaseAgent):
         """分析主题和研究领域"""
         self.log(f"Analyzing topics for {paper_id}...")
 
-        prompt = f"""分析论文的研究主题和领域。
-
-**标题**: {paper_data.get('title')}
-
-**摘要**:
-{paper_data.get('abstract', '')}
-
-**关键词**: {', '.join(paper_data.get('keywords', []))}
-
-请识别：
-1. 主要研究领域（如 NLP, CV, RL 等）
-2. 具体研究方向（如 Transformers, Object Detection 等）
-3. 技术栈和方法类别
-4. 应用场景
-
-以 JSON 格式输出：
-```json
-{{
-  "primary_field": "主要领域",
-  "sub_fields": ["子领域1", "子领域2"],
-  "research_direction": "具体研究方向",
-  "technical_stack": ["技术1", "技术2"],
-  "application_domains": ["应用领域1", "应用领域2"]
-}}
-```"""
+        prompt = load_prompt(
+            "analyzer/topics",
+            title=paper_data.get('title', 'N/A'),
+            abstract=paper_data.get('abstract', ''),
+            keywords=', '.join(paper_data.get('keywords', [])),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return self._parse_json_response(response, default={})
@@ -259,30 +231,12 @@ class RelationAnalyzerAgent(BaseAgent):
 **被引用**: {len(citing_papers)} 次
 """
 
-        prompt = f"""分析这篇论文在研究演进中的位置。
-
-**论文**: {paper_data.get('title')}
-
-**时间信息**:
-{evolution_context}
-
-**摘要**:
-{paper_data.get('abstract', '')[:300]}
-
-请分析：
-1. 这篇论文继承了哪些前人的工作？
-2. 它在研究脉络中的创新点是什么？
-3. 它可能对后续研究产生什么影响？
-
-以 JSON 格式输出：
-```json
-{{
-  "builds_on": "基于哪些前人工作",
-  "innovation": "主要创新点",
-  "potential_impact": "潜在影响",
-  "position_in_timeline": "在研究时间线中的位置描述"
-}}
-```"""
+        prompt = load_prompt(
+            "analyzer/evolution",
+            title=paper_data.get('title', 'N/A'),
+            evolution_context=evolution_context,
+            abstract=paper_data.get('abstract', '')[:300],
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         result = self._parse_json_response(response, default={})
@@ -337,27 +291,14 @@ class RelationAnalyzerAgent(BaseAgent):
         evolution_info = analysis_results.get('evolution_analysis', {})
         impact_info = analysis_results.get('impact_analysis', {})
 
-        prompt = f"""基于以下关系分析结果，生成一个简洁的关系摘要（200字以内）。
-
-**引用信息**:
-- 引用了 {citation_info.get('num_references', 0)} 篇论文
-- 被引用 {citation_info.get('num_citing_this', 0)} 次
-
-**相似论文**:
-- 发现 {similarity_info.get('num_similar_papers', 0)} 篇相似论文
-
-**研究领域**:
-- {topic_info.get('primary_field', 'Unknown')}
-
-**影响力**:
-- 影响力等级: {impact_info.get('impact_level', 'Unknown')}
-
-请生成一个关系摘要，说明：
-1. 论文在研究网络中的位置
-2. 与其他研究的关系
-3. 潜在影响
-
-直接输出摘要文本。"""
+        prompt = load_prompt(
+            "analyzer/relation_summary",
+            num_references=str(citation_info.get('num_references', 0)),
+            num_citing=str(citation_info.get('num_citing_this', 0)),
+            num_similar=str(similarity_info.get('num_similar_papers', 0)),
+            primary_field=topic_info.get('primary_field', 'Unknown'),
+            impact_level=impact_info.get('impact_level', 'Unknown'),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         return response.strip()
@@ -393,29 +334,11 @@ class RelationAnalyzerAgent(BaseAgent):
             return {"error": "Could not find enough papers in knowledge graph"}
 
         # 使用 LLM 进行对比分析
-        prompt = f"""对比分析以下 {len(papers_info)} 篇论文：
-
-{self._format_papers_for_comparison(papers_info)}
-
-请从以下方面对比：
-1. 研究问题的异同
-2. 方法的差异
-3. 各自的优势和不足
-4. 互补性或竞争关系
-
-以 JSON 格式输出：
-```json
-{{
-  "commonalities": ["共同点1", "共同点2"],
-  "differences": ["差异1", "差异2"],
-  "comparative_advantages": {{
-    "paper1_id": ["优势1", "优势2"],
-    "paper2_id": ["优势1", "优势2"]
-  }},
-  "relationship": "竞争/互补/延续",
-  "summary": "对比总结"
-}}
-```"""
+        prompt = load_prompt(
+            "analyzer/compare_papers",
+            papers_count=str(len(papers_info)),
+            papers_formatted=self._format_papers_for_comparison(papers_info),
+        )
 
         response = self.call_llm(prompt, self._get_system_prompt())
         comparison = self._parse_json_response(response, default={})
@@ -429,9 +352,7 @@ class RelationAnalyzerAgent(BaseAgent):
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
-        return """你是一个专业的学术关系分析助手，擅长分析论文之间的关系和影响。
-你的任务是识别论文在研究网络中的位置，分析其与其他研究的联系。
-请始终以结构化的 JSON 格式输出结果（当需要时），确保格式正确。"""
+        return load_prompt("system/analyzer")
 
     def _parse_json_response(self, response: str, default: Dict = None) -> Dict:
         """解析 JSON 响应"""

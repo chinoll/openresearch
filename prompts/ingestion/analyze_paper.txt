@@ -1,0 +1,28 @@
+请分析以下论文内容：
+
+**标题**: {{title}}
+
+**作者**: {{authors}}
+
+**摘要**:
+{{abstract}}
+
+**章节结构**:
+{{sections}}
+
+**引用数量**: {{citations_count}}
+**公式数量**: {{equations_count}}
+**图表数量**: {{figures_count}}
+
+请提供以下分析（以 JSON 格式输出）：
+
+{
+    "summary": "简洁的论文总结（3-5句话）",
+    "key_contributions": ["核心贡献1", "核心贡献2"],
+    "methodology": "使用的主要方法和技术",
+    "research_questions": ["研究问题1", "研究问题2"],
+    "limitations": ["局限性1", "局限性2"],
+    "future_work": "未来研究方向",
+    "keywords": ["关键词1", "关键词2"],
+    "research_area": "研究领域（如：NLP, CV, RL等）"
+}
