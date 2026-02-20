@@ -18,6 +18,31 @@ from prompts.loader import load as load_prompt
 class KnowledgeExtractorAgent(BaseAgent):
     """知识提取 Agent - 深度分析论文内容"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema, OutputSchema
+    REGISTRATION = ModuleRegistration(
+        name="knowledge_extractor",
+        module_type=ModuleType.AGENT,
+        display_name="知识提取 Agent",
+        description="深度分析论文内容，提取核心贡献、方法论、关键词等",
+        pipeline_stage="extraction",
+        pipeline_order=20,
+        capabilities=[
+            Capability(
+                name="extract_knowledge",
+                description="从论文中提取结构化知识",
+                input_schema=[
+                    InputSchema(name="paper_data", type="Dict", description="论文解析数据"),
+                    InputSchema(name="extraction_tasks", type="List[str]", description="提取任务列表", required=False),
+                ],
+                output_schema=[
+                    OutputSchema(name="extracted_knowledge", type="Dict", description="提取的知识"),
+                ],
+                tags=["extraction", "knowledge", "paper"],
+            ),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, InputSchema, OutputSchema
+
     def __init__(self, config: AgentConfig):
         super().__init__(config)
         self.log("Knowledge Extractor Agent initialized")

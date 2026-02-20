@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 class ArxivDownloader:
     """arXiv 论文下载器，优先 TeX 源文件"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="arxiv_downloader",
+        module_type=ModuleType.CORE_SERVICE,
+        display_name="arXiv 下载器",
+        description="从 arXiv 下载论文（优先 TeX 源文件，降级到 PDF）",
+        constructor_params=[
+            ConstructorParam(name="download_dir", from_config="storage.papers", default="./data/papers"),
+            ConstructorParam(name="prefer_tex", default=True),
+        ],
+        capabilities=[
+            Capability(name="download_paper", description="下载 arXiv 论文", tags=["download", "arxiv"]),
+            Capability(name="get_paper_info", description="获取论文元数据", tags=["metadata", "arxiv"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, download_dir: Path, prefer_tex: bool = True):
         """
         Args:

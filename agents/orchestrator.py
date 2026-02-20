@@ -1,6 +1,8 @@
 """
 Orchestrator Agent - 主控 Agent
 协调所有子 Agent，管理整体工作流
+
+通过 Registry 获取依赖，支持动态流水线组合。
 """
 
 import sys
@@ -11,47 +13,85 @@ import json
 sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
-from agents.ingestion import PaperIngestionAgent
-from agents.extractor import KnowledgeExtractorAgent
-from agents.analyzer import RelationAnalyzerAgent
-
-from core.vector_store import VectorStore
-from core.knowledge_graph import KnowledgeGraph
+from core.registry import get_registry, ModuleRegistration, ModuleType
 
 
 class OrchestratorAgent(BaseAgent):
     """主控 Agent - 协调整个研究流程"""
 
+    from core.registry import ModuleRegistration as _MR, ModuleType as _MT, Capability, DependencySpec
+    REGISTRATION = _MR(
+        name="orchestrator",
+        module_type=_MT.AGENT,
+        display_name="主控 Agent",
+        description="协调所有子 Agent，管理论文研究全流程",
+        dependencies=[
+            DependencySpec(name="vector_store"),
+            DependencySpec(name="knowledge_graph"),
+        ],
+        capabilities=[
+            Capability(name="add_paper", description="添加论文并进行完整分析流水线", tags=["pipeline", "paper"]),
+            Capability(name="analyze_paper", description="对已有论文重新进行关系分析", tags=["analysis", "paper"]),
+            Capability(name="compare_papers", description="对比多篇论文", tags=["analysis", "comparison"]),
+            Capability(name="get_statistics", description="获取系统统计信息", tags=["stats"]),
+            Capability(name="search_papers", description="语义搜索论文", tags=["search", "paper"]),
+        ],
+    )
+    del _MR, _MT, Capability, DependencySpec
+
     def __init__(self,
                  config: AgentConfig,
-                 data_dir: Path,
-                 vector_db_path: Path,
-                 graph_path: Path):
+                 app_config: dict = None,
+                 # 向后兼容：直接传入路径参数
+                 data_dir: Path = None,
+                 vector_db_path: Path = None,
+                 graph_path: Path = None,
+                 # 通过 registry DI 注入
+                 vector_store=None,
+                 knowledge_graph=None):
         """
         初始化主控 Agent
 
-        Args:
-            config: Agent 配置
-            data_dir: 数据目录
-            vector_db_path: 向量数据库路径
-            graph_path: 知识图谱路径
+        支持两种模式:
+        1. Registry 模式: 传入 app_config，通过 registry 获取所有依赖
+        2. 直接模式（向后兼容）: 传入 data_dir/vector_db_path/graph_path
         """
         super().__init__(config)
 
-        self.data_dir = Path(data_dir)
+        self._app_config = app_config or {}
+        self._registry = get_registry()
+
+        # 初始化核心组件（优先使用 DI 注入的实例）
+        if vector_store is not None:
+            self.vector_store = vector_store
+        elif vector_db_path:
+            from core.vector_store import VectorStore
+            self.vector_store = VectorStore(
+                db_path=vector_db_path,
+                collection_name="research_papers"
+            )
+            self._registry.set_instance("vector_store", self.vector_store)
+        else:
+            self.vector_store = self._registry.get_instance("vector_store", self._app_config)
+
+        if knowledge_graph is not None:
+            self.knowledge_graph = knowledge_graph
+        elif graph_path:
+            from core.knowledge_graph import KnowledgeGraph
+            self.knowledge_graph = KnowledgeGraph(graph_path=graph_path)
+            self._registry.set_instance("knowledge_graph", self.knowledge_graph)
+        else:
+            self.knowledge_graph = self._registry.get_instance("knowledge_graph", self._app_config)
+
+        # data_dir 用于论文存储
+        if data_dir:
+            self.data_dir = Path(data_dir)
+        else:
+            storage = self._app_config.get('storage', {})
+            self.data_dir = Path(storage.get('papers', './data/papers'))
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        # 初始化核心组件
-        self.vector_store = VectorStore(
-            db_path=vector_db_path,
-            collection_name="research_papers"
-        )
-
-        self.knowledge_graph = KnowledgeGraph(
-            graph_path=graph_path
-        )
-
-        # 初始化子 Agent
+        # 初始化子 Agent（通过 registry 或直接构造）
         self._init_sub_agents(config)
 
         self.log("Orchestrator Agent initialized")
@@ -59,10 +99,48 @@ class OrchestratorAgent(BaseAgent):
         self.log(f"Knowledge graph: {self.knowledge_graph.get_statistics()}")
 
     def _init_sub_agents(self, config: AgentConfig):
-        """初始化所有子 Agent"""
+        """
+        初始化所有子 Agent。
 
+        优先通过 registry 获取已注册的 Agent 实例；
+        如果 registry 中没有对应注册，则回退到直接构造。
+        """
         # 论文摄入 Agent
-        self.ingestion_agent = PaperIngestionAgent(
+        self.ingestion_agent = self._get_or_create_agent(
+            "paper_ingestion",
+            lambda: self._create_ingestion_agent(config)
+        )
+
+        # 知识提取 Agent
+        self.extractor_agent = self._get_or_create_agent(
+            "knowledge_extractor",
+            lambda: self._create_extractor_agent(config)
+        )
+
+        # 关系分析 Agent
+        self.analyzer_agent = self._get_or_create_agent(
+            "relation_analyzer",
+            lambda: self._create_analyzer_agent(config)
+        )
+
+        self.log("All sub-agents initialized")
+
+    def _get_or_create_agent(self, name: str, fallback_factory):
+        """通过 registry 获取 Agent 实例，失败时使用回退工厂"""
+        reg = self._registry.get_registration(name)
+        if reg and reg.cls:
+            try:
+                from core.registration import agent_factory
+                instance = agent_factory(reg.cls, self._app_config)
+                self._registry.set_instance(name, instance)
+                return instance
+            except Exception as e:
+                self.log(f"Registry creation for {name} failed, using fallback: {e}", "warning")
+        return fallback_factory()
+
+    def _create_ingestion_agent(self, config: AgentConfig):
+        from agents.ingestion import PaperIngestionAgent
+        return PaperIngestionAgent(
             config=AgentConfig(
                 name="PaperIngestion",
                 model=config.model,
@@ -72,18 +150,20 @@ class OrchestratorAgent(BaseAgent):
             download_dir=self.data_dir
         )
 
-        # 知识提取 Agent
-        self.extractor_agent = KnowledgeExtractorAgent(
+    def _create_extractor_agent(self, config: AgentConfig):
+        from agents.extractor import KnowledgeExtractorAgent
+        return KnowledgeExtractorAgent(
             config=AgentConfig(
                 name="KnowledgeExtractor",
                 model=config.model,
                 api_key=config.api_key,
-                temperature=0.7  # 知识提取需要更稳定的输出
+                temperature=0.7
             )
         )
 
-        # 关系分析 Agent
-        self.analyzer_agent = RelationAnalyzerAgent(
+    def _create_analyzer_agent(self, config: AgentConfig):
+        from agents.analyzer import RelationAnalyzerAgent
+        return RelationAnalyzerAgent(
             config=AgentConfig(
                 name="RelationAnalyzer",
                 model=config.model,
@@ -94,18 +174,52 @@ class OrchestratorAgent(BaseAgent):
             knowledge_graph=self.knowledge_graph
         )
 
-        self.log("All sub-agents initialized")
+    # ==================== 流水线组合 ====================
 
-    async def process(self, input_data: Dict) -> Dict:
+    def compose_pipeline(self, stages: List[str], input_data: Dict) -> List[ModuleRegistration]:
         """
-        处理请求（主要用于扩展）
+        按 stage 名列表动态组合流水线。
 
         Args:
-            input_data: 输入数据
+            stages: pipeline_stage 名列表，如 ["ingestion", "extraction", "analysis"]
+            input_data: 初始输入
 
         Returns:
-            处理结果
+            按 pipeline_order 排序的 Agent 注册列表
         """
+        pipeline = []
+        for stage in stages:
+            stage_agents = self._registry.get_pipeline_modules(stage)
+            pipeline.extend(stage_agents)
+        return pipeline
+
+    def _llm_route(self, input_data: Dict) -> Optional[str]:
+        """
+        用 LLM + describe_capabilities() 智能路由未知 command。
+
+        Returns:
+            匹配到的 capability 名，或 None
+        """
+        capabilities_text = self._registry.describe_capabilities()
+        if not capabilities_text or not self.llm_client:
+            return None
+
+        command = input_data.get('command', '')
+        prompt = f"""根据以下可用能力列表，判断用户命令 "{command}" 最匹配哪个能力。
+只返回能力的 name（如 "ingest_arxiv"），如果没有匹配返回 "none"。
+
+{capabilities_text}"""
+
+        response = self.call_llm(prompt)
+        result = response.strip().strip('"').strip("'")
+        if result and result != "none":
+            return result
+        return None
+
+    # ==================== 命令分发 ====================
+
+    async def process(self, input_data: Dict) -> Dict:
+        """处理请求"""
         command = input_data.get('command', 'add_paper')
 
         if command == 'add_paper':
@@ -122,6 +236,16 @@ class OrchestratorAgent(BaseAgent):
                 paper_ids=input_data.get('paper_ids', [])
             )
         else:
+            # 尝试 LLM 智能路由
+            capability = self._llm_route(input_data)
+            if capability:
+                reg = self._registry.find_by_capability(capability)
+                if reg:
+                    self.log(f"LLM routed command '{command}' to {reg.name}.{capability}")
+                    instance = self._registry.get_instance(reg.name, self._app_config)
+                    if hasattr(instance, 'process'):
+                        return await instance.process(input_data)
+
             return AgentResponse(
                 success=False,
                 error=f"Unknown command: {command}"
@@ -129,17 +253,7 @@ class OrchestratorAgent(BaseAgent):
 
     async def add_paper(self, source: str, identifier: str,
                        full_analysis: bool = True) -> Dict:
-        """
-        添加论文并进行完整分析
-
-        Args:
-            source: 'arxiv' 或 'local'
-            identifier: arXiv ID 或文件路径
-            full_analysis: 是否进行完整分析
-
-        Returns:
-            完整的处理结果
-        """
+        """添加论文并进行完整分析"""
         self.log(f"Starting full pipeline for {identifier}")
         self.log("=" * 60)
 
@@ -286,7 +400,7 @@ class OrchestratorAgent(BaseAgent):
             paper_id=paper_id,
             title=title,
             abstract=abstract,
-            full_text=full_text[:10000],  # 限制长度
+            full_text=full_text[:10000],
             metadata=metadata
         )
 
@@ -307,7 +421,6 @@ class OrchestratorAgent(BaseAgent):
         """对已存在的论文进行重新分析"""
         self.log(f"Re-analyzing paper: {paper_id}")
 
-        # 从向量存储获取论文
         paper = self.vector_store.get_paper_by_id(paper_id)
         if not paper:
             return AgentResponse(
@@ -315,7 +428,6 @@ class OrchestratorAgent(BaseAgent):
                 error=f"Paper not found: {paper_id}"
             ).to_dict()
 
-        # 构建 paper_data
         paper_data = {
             'title': paper['metadata'].get('title', 'Unknown'),
             'abstract': paper['metadata'].get('abstract', ''),
@@ -323,7 +435,6 @@ class OrchestratorAgent(BaseAgent):
             'metadata': paper['metadata']
         }
 
-        # 执行关系分析
         analysis_result = await self.analyzer_agent.process({
             'paper_id': paper_id,
             'paper_data': paper_data,
@@ -342,9 +453,7 @@ class OrchestratorAgent(BaseAgent):
                 error="Need at least 2 papers to compare"
             ).to_dict()
 
-        # 使用关系分析 Agent 进行对比
         comparison = await self.analyzer_agent.compare_papers(paper_ids)
-
         return AgentResponse(success=True, data=comparison).to_dict()
 
     def get_statistics(self) -> Dict:
@@ -383,7 +492,6 @@ if __name__ == "__main__":
             graph_path=Path("./data/knowledge_graph.pkl")
         )
 
-        # 添加论文
         result = await orchestrator.add_paper(
             source='arxiv',
             identifier='2301.00001'
@@ -391,7 +499,6 @@ if __name__ == "__main__":
 
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
-        # 查看统计
         stats = orchestrator.get_statistics()
         print("\nStatistics:", json.dumps(stats, indent=2))
 

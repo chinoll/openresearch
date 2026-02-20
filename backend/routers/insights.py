@@ -7,6 +7,7 @@ from typing import Optional, List
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.insights_system import InsightsManager
+from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 manager = InsightsManager(storage_dir=Path("knowledge"))
@@ -78,3 +79,51 @@ async def end_session():
         manager.current_session.id if manager.current_session else None
     )
     return {"success": True, "summary": result}
+
+
+# Router 注册元数据
+ROUTER_REGISTRATION = ModuleRegistration(
+    name="insights_router",
+    module_type=ModuleType.ROUTER,
+    display_name="洞察管理 API",
+    description="洞察记录、列表、统计、阅读会话",
+    api_prefix="/api/insights",
+    api_tags=["insights"],
+    capabilities=[
+        Capability(
+            name="create_insight",
+            description="记录阅读论文时的洞察或观察",
+            input_schema=[
+                InputSchema(name="content", type="str", description="洞察内容"),
+                InputSchema(name="paper_id", type="str", description="来源论文 ID"),
+                InputSchema(name="insight_type", type="str", description="洞察类型", required=False,
+                           enum_values=["observation", "question", "connection", "surprise", "critique", "insight"]),
+                InputSchema(name="importance", type="int", description="重要性 1-5", required=False),
+                InputSchema(name="section", type="str", description="论文章节", required=False),
+            ],
+            tags=["insight", "create"],
+        ),
+        Capability(
+            name="list_insights",
+            description="列出洞察记录",
+            input_schema=[
+                InputSchema(name="paper_id", type="str", description="按论文筛选", required=False),
+                InputSchema(name="insight_type", type="str", description="按类型筛选", required=False),
+                InputSchema(name="unconverted_only", type="bool", description="只看未转化的洞察", required=False),
+            ],
+            tags=["insight", "list"],
+        ),
+        Capability(
+            name="start_reading_session",
+            description="开始阅读一篇论文的会话",
+            input_schema=[InputSchema(name="paper_id", type="str", description="要阅读的论文 ID")],
+            tags=["session", "start"],
+        ),
+        Capability(
+            name="end_reading_session",
+            description="结束当前阅读会话",
+            input_schema=[InputSchema(name="notes", type="str", description="会话总结笔记", required=False)],
+            tags=["session", "end"],
+        ),
+    ],
+)

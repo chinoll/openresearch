@@ -4,10 +4,13 @@ Base Agent - 所有 Agent 的基类
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
+from typing import ClassVar, Dict, List, Optional, Any, TYPE_CHECKING
 import logging
 from dataclasses import dataclass
 import json
+
+if TYPE_CHECKING:
+    from core.registry import ModuleRegistration
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +28,8 @@ class AgentConfig:
 
 class BaseAgent(ABC):
     """Agent 基类"""
+
+    REGISTRATION: ClassVar[Optional["ModuleRegistration"]] = None
 
     def __init__(self, config: AgentConfig):
         self.config = config

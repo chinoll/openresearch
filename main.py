@@ -11,6 +11,7 @@ import sys
 
 from agents.base_agent import AgentConfig
 from agents.orchestrator import OrchestratorAgent
+from core.registry import get_registry
 
 
 class DeepResearchSystem:
@@ -70,6 +71,10 @@ class DeepResearchSystem:
 
     def _init_agents(self):
         """初始化主控 Agent"""
+        # 自动发现并注册所有模块
+        registry = get_registry()
+        registry.auto_discover(['agents', 'core'])
+
         llm_config = self.config.get('llm', {})
 
         agent_config = AgentConfig(
@@ -80,9 +85,10 @@ class DeepResearchSystem:
             api_key=llm_config.get('api_key')
         )
 
-        # 初始化主控 Agent（它会自动初始化所有子 Agent）
+        # 初始化主控 Agent（传入 app_config 以支持 registry 路径）
         self.orchestrator = OrchestratorAgent(
             config=agent_config,
+            app_config=self.config,
             data_dir=self.data_dir,
             vector_db_path=self.vector_db_path,
             graph_path=self.graph_path

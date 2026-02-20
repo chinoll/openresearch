@@ -18,6 +18,26 @@ from core.ideas_manager import IdeasManager, Idea
 class InsightAgent(BaseAgent):
     """研究洞察 Agent - 纯文本记忆管理"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec
+    REGISTRATION = ModuleRegistration(
+        name="insight_agent",
+        module_type=ModuleType.AGENT,
+        display_name="研究洞察 Agent",
+        description="管理研究想法，发现想法之间的联系，综合多个想法生成高层洞察",
+        pipeline_stage=None,  # 不属于主流水线
+        dependencies=[
+            DependencySpec(name="ideas_manager"),
+        ],
+        capabilities=[
+            Capability(name="record_idea", description="记录新想法（带 AI 增强）", tags=["idea", "record"]),
+            Capability(name="find_related", description="查找相关想法", tags=["idea", "search"]),
+            Capability(name="suggest_updates", description="建议需要更新的想法", tags=["idea", "suggest"]),
+            Capability(name="synthesize", description="综合多个想法生成高层洞察", tags=["idea", "synthesize"]),
+            Capability(name="review_session", description="回顾阅读会话", tags=["session", "review"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, DependencySpec
+
     def __init__(self,
                  config: AgentConfig,
                  ideas_manager: IdeasManager):

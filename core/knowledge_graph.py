@@ -46,6 +46,24 @@ class PaperNode:
 class KnowledgeGraph:
     """论文知识图谱"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="knowledge_graph",
+        module_type=ModuleType.CORE_SERVICE,
+        display_name="知识图谱",
+        description="NetworkX 知识图谱，用于论文引用关系和相似度网络",
+        constructor_params=[
+            ConstructorParam(name="graph_path", from_config="storage.graph", default="./data/knowledge_graph.pkl"),
+        ],
+        capabilities=[
+            Capability(name="add_paper_node", description="添加论文节点到知识图谱", tags=["storage", "graph"]),
+            Capability(name="add_citation", description="添加引用关系", tags=["graph", "citation"]),
+            Capability(name="get_citation_network", description="获取引用网络", tags=["graph", "citation"]),
+            Capability(name="get_statistics", description="获取图谱统计信息", tags=["graph", "stats"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, graph_path: Path = None):
         """
         初始化知识图谱

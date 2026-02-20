@@ -7,6 +7,7 @@ from typing import Optional, List
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.ideas_manager import IdeasManager
+from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/ideas", tags=["ideas"])
 manager = IdeasManager(storage_dir=Path("knowledge/ideas"))
@@ -53,3 +54,35 @@ async def get_idea(idea_id: str):
         raise HTTPException(status_code=404, detail=f"想法 {idea_id} 不存在")
     from dataclasses import asdict
     return asdict(idea)
+
+
+# Router 注册元数据
+ROUTER_REGISTRATION = ModuleRegistration(
+    name="ideas_router",
+    module_type=ModuleType.ROUTER,
+    display_name="想法管理 API",
+    description="研究想法记录、列表、统计",
+    api_prefix="/api/ideas",
+    api_tags=["ideas"],
+    capabilities=[
+        Capability(
+            name="create_idea",
+            description="记录研究想法",
+            input_schema=[
+                InputSchema(name="title", type="str", description="想法标题"),
+                InputSchema(name="content", type="str", description="想法内容"),
+                InputSchema(name="paper_id", type="str", description="相关论文 ID", required=False),
+                InputSchema(name="tags", type="array", description="标签", required=False),
+            ],
+            tags=["idea", "create"],
+        ),
+        Capability(
+            name="list_ideas",
+            description="列出研究想法",
+            input_schema=[
+                InputSchema(name="status", type="str", description="按状态筛选", required=False),
+            ],
+            tags=["idea", "list"],
+        ),
+    ],
+)

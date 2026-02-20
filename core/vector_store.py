@@ -31,6 +31,23 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """向量数据库封装"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="vector_store",
+        module_type=ModuleType.CORE_SERVICE,
+        display_name="向量数据库",
+        description="ChromaDB 向量存储，用于论文语义搜索",
+        constructor_params=[
+            ConstructorParam(name="db_path", from_config="storage.vector_db", default="./data/vector_db"),
+            ConstructorParam(name="collection_name", default="research_papers"),
+        ],
+        capabilities=[
+            Capability(name="search_similar", description="搜索相似论文", tags=["search"]),
+            Capability(name="add_paper", description="添加论文到向量库", tags=["storage"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self,
                  db_path: Path,
                  collection_name: str = "research_papers",

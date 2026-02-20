@@ -19,6 +19,44 @@ from core.knowledge_graph import KnowledgeGraph
 class RelationAnalyzerAgent(BaseAgent):
     """关系分析 Agent - 构建论文关系网络"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema
+    REGISTRATION = ModuleRegistration(
+        name="relation_analyzer",
+        module_type=ModuleType.AGENT,
+        display_name="关系分析 Agent",
+        description="分析论文之间的引用、相似度、主题关系，构建知识网络",
+        pipeline_stage="analysis",
+        pipeline_order=30,
+        dependencies=[
+            DependencySpec(name="vector_store"),
+            DependencySpec(name="knowledge_graph"),
+        ],
+        capabilities=[
+            Capability(
+                name="analyze_relations",
+                description="分析论文关系（引用、相似度、主题、演进、影响力）",
+                input_schema=[
+                    InputSchema(name="paper_id", type="str", description="论文 ID"),
+                    InputSchema(name="paper_data", type="Dict", description="论文数据"),
+                    InputSchema(name="analysis_tasks", type="List[str]", description="分析任务列表", required=False),
+                ],
+                output_schema=[
+                    OutputSchema(name="analysis_results", type="Dict", description="分析结果"),
+                ],
+                tags=["analysis", "citation", "similarity", "paper"],
+            ),
+            Capability(
+                name="compare_papers",
+                description="对比分析多篇论文",
+                input_schema=[
+                    InputSchema(name="paper_ids", type="List[str]", description="论文 ID 列表"),
+                ],
+                tags=["analysis", "comparison", "paper"],
+            ),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema
+
     def __init__(self,
                  config: AgentConfig,
                  vector_store: VectorStore,

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.arxiv_downloader import ArxivDownloader
+from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
 downloader = ArxivDownloader(download_dir=Path("papers"))
@@ -79,3 +80,29 @@ async def get_paper(paper_id: str):
         "has_tex": (paper_dir / "source.tex").exists(),
         "has_pdf": (paper_dir / "paper.pdf").exists(),
     }
+
+
+# Router 注册元数据
+ROUTER_REGISTRATION = ModuleRegistration(
+    name="papers_router",
+    module_type=ModuleType.ROUTER,
+    display_name="论文管理 API",
+    description="论文下载、列表、详情",
+    api_prefix="/api/papers",
+    api_tags=["papers"],
+    capabilities=[
+        Capability(
+            name="download_paper",
+            description="从 arXiv 下载论文（TeX 源文件优先）",
+            input_schema=[InputSchema(name="arxiv_id", type="str", description="arXiv 论文 ID，如 1810.04805")],
+            tags=["paper", "download"],
+        ),
+        Capability(name="list_papers", description="列出已下载的论文", tags=["paper", "list"]),
+        Capability(
+            name="get_paper_info",
+            description="获取指定论文的详细信息（标题、作者、摘要、章节等）",
+            input_schema=[InputSchema(name="paper_id", type="str", description="论文 ID，如 1810_04805")],
+            tags=["paper", "detail"],
+        ),
+    ],
+)

@@ -15,8 +15,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import anthropic
-from backend.tools import TOOLS
+from backend.tools import TOOLS, generate_tools_from_registry
 from prompts.loader import load as load_prompt
+from core.registry import ModuleRegistration, ModuleType, Capability, get_registry
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -34,98 +35,122 @@ class ChatRequest(BaseModel):
     history: List[Message] = []
 
 
+# 工具名 → 执行函数 的静态映射（用于快速分发）
+_TOOL_DISPATCH = {}
+
+
+def _build_tool_dispatch():
+    """构建工具分发表（延迟初始化，避免循环导入）"""
+    if _TOOL_DISPATCH:
+        return
+
+    from backend.routers.papers import DownloadRequest, download_paper, list_papers, get_paper
+    from backend.routers.insights import (
+        CreateInsightRequest, create_insight, list_insights,
+        StartSessionRequest, start_session, end_session,
+        get_stats as insight_stats
+    )
+    from backend.routers.questions import (
+        CreateQuestionRequest, create_question, list_questions,
+        AddAnswerRequest, add_answer,
+        get_stats as question_stats
+    )
+    from backend.routers.ideas import (
+        CreateIdeaRequest, create_idea, list_ideas,
+        get_stats as idea_stats
+    )
+
+    async def _download_paper(tool_input):
+        req = DownloadRequest(arxiv_id=tool_input["arxiv_id"])
+        return await download_paper(req)
+
+    async def _list_papers(tool_input):
+        return await list_papers()
+
+    async def _get_paper_info(tool_input):
+        return await get_paper(tool_input["paper_id"])
+
+    async def _create_insight(tool_input):
+        req = CreateInsightRequest(**tool_input)
+        return await create_insight(req)
+
+    async def _list_insights(tool_input):
+        return await list_insights(
+            paper_id=tool_input.get("paper_id"),
+            insight_type=tool_input.get("insight_type"),
+            unconverted_only=tool_input.get("unconverted_only", False)
+        )
+
+    async def _create_question(tool_input):
+        req = CreateQuestionRequest(**tool_input)
+        return await create_question(req)
+
+    async def _list_questions(tool_input):
+        return await list_questions(
+            paper_id=tool_input.get("paper_id"),
+            status=tool_input.get("status"),
+            question_type=tool_input.get("question_type"),
+            min_importance=tool_input.get("min_importance")
+        )
+
+    async def _add_answer(tool_input):
+        ti = dict(tool_input)
+        question_id = ti.pop("question_id")
+        req = AddAnswerRequest(**ti)
+        return await add_answer(question_id, req)
+
+    async def _create_idea(tool_input):
+        req = CreateIdeaRequest(**tool_input)
+        return await create_idea(req)
+
+    async def _list_ideas(tool_input):
+        return await list_ideas(status=tool_input.get("status"))
+
+    async def _start_reading_session(tool_input):
+        req = StartSessionRequest(paper_id=tool_input["paper_id"])
+        return await start_session(req)
+
+    async def _end_reading_session(tool_input):
+        return await end_session()
+
+    async def _get_statistics(tool_input):
+        papers = await list_papers()
+        return {
+            "papers": {"total": len(papers.get("papers", []))},
+            "insights": await insight_stats(),
+            "questions": await question_stats(),
+            "ideas": await idea_stats()
+        }
+
+    _TOOL_DISPATCH.update({
+        "download_paper": _download_paper,
+        "list_papers": _list_papers,
+        "get_paper_info": _get_paper_info,
+        "create_insight": _create_insight,
+        "list_insights": _list_insights,
+        "create_question": _create_question,
+        "list_questions": _list_questions,
+        "add_answer": _add_answer,
+        "create_idea": _create_idea,
+        "list_ideas": _list_ideas,
+        "start_reading_session": _start_reading_session,
+        "end_reading_session": _end_reading_session,
+        "get_statistics": _get_statistics,
+    })
+
+
 async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Any:
-    """执行工具调用，返回结果"""
-    # 动态导入以避免循环依赖
-    from backend.routers import papers as papers_router
-    from backend.routers import insights as insights_router
-    from backend.routers import questions as questions_router
-    from backend.routers import ideas as ideas_router
-    from pydantic import BaseModel
+    """执行工具调用，返回结果（基于注册表动态分发）"""
+    _build_tool_dispatch()
 
-    try:
-        if tool_name == "download_paper":
-            from backend.routers.papers import DownloadRequest, download_paper
-            req = DownloadRequest(arxiv_id=tool_input["arxiv_id"])
-            return await download_paper(req)
+    handler = _TOOL_DISPATCH.get(tool_name)
+    if handler:
+        try:
+            return await handler(tool_input)
+        except Exception as e:
+            return {"error": str(e)}
 
-        elif tool_name == "list_papers":
-            from backend.routers.papers import list_papers
-            return await list_papers()
-
-        elif tool_name == "get_paper_info":
-            from backend.routers.papers import get_paper
-            return await get_paper(tool_input["paper_id"])
-
-        elif tool_name == "create_insight":
-            from backend.routers.insights import CreateInsightRequest, create_insight
-            req = CreateInsightRequest(**tool_input)
-            return await create_insight(req)
-
-        elif tool_name == "list_insights":
-            from backend.routers.insights import list_insights
-            return await list_insights(
-                paper_id=tool_input.get("paper_id"),
-                insight_type=tool_input.get("insight_type"),
-                unconverted_only=tool_input.get("unconverted_only", False)
-            )
-
-        elif tool_name == "create_question":
-            from backend.routers.questions import CreateQuestionRequest, create_question
-            req = CreateQuestionRequest(**tool_input)
-            return await create_question(req)
-
-        elif tool_name == "list_questions":
-            from backend.routers.questions import list_questions
-            return await list_questions(
-                paper_id=tool_input.get("paper_id"),
-                status=tool_input.get("status"),
-                question_type=tool_input.get("question_type"),
-                min_importance=tool_input.get("min_importance")
-            )
-
-        elif tool_name == "add_answer":
-            from backend.routers.questions import AddAnswerRequest, add_answer
-            question_id = tool_input.pop("question_id")
-            req = AddAnswerRequest(**tool_input)
-            return await add_answer(question_id, req)
-
-        elif tool_name == "create_idea":
-            from backend.routers.ideas import CreateIdeaRequest, create_idea
-            req = CreateIdeaRequest(**tool_input)
-            return await create_idea(req)
-
-        elif tool_name == "list_ideas":
-            from backend.routers.ideas import list_ideas
-            return await list_ideas(status=tool_input.get("status"))
-
-        elif tool_name == "start_reading_session":
-            from backend.routers.insights import StartSessionRequest, start_session
-            req = StartSessionRequest(paper_id=tool_input["paper_id"])
-            return await start_session(req)
-
-        elif tool_name == "end_reading_session":
-            from backend.routers.insights import end_session
-            return await end_session()
-
-        elif tool_name == "get_statistics":
-            from backend.routers.insights import get_stats as insight_stats
-            from backend.routers.questions import get_stats as question_stats
-            from backend.routers.ideas import get_stats as idea_stats
-            from backend.routers.papers import list_papers
-            papers = await list_papers()
-            return {
-                "papers": {"total": len(papers.get("papers", []))},
-                "insights": await insight_stats(),
-                "questions": await question_stats(),
-                "ideas": await idea_stats()
-            }
-
-        else:
-            return {"error": f"未知工具: {tool_name}"}
-
-    except Exception as e:
-        return {"error": str(e)}
+    return {"error": f"未知工具: {tool_name}"}
 
 
 @router.post("/")
@@ -189,3 +214,28 @@ async def chat(req: ChatRequest):
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+def _get_tools():
+    """获取工具列表：优先从 registry 生成，回退到静态 TOOLS"""
+    try:
+        generated = generate_tools_from_registry()
+        if generated:
+            return generated
+    except Exception:
+        pass
+    return TOOLS
+
+
+# Router 注册元数据
+ROUTER_REGISTRATION = ModuleRegistration(
+    name="chat_router",
+    module_type=ModuleType.ROUTER,
+    display_name="AI 对话 API",
+    description="自然语言对话，AI 自动决定调用工具",
+    api_prefix="/api/chat",
+    api_tags=["chat"],
+    capabilities=[
+        Capability(name="chat", description="AI 对话（支持工具调用和流式返回）", tags=["chat", "ai"]),
+    ],
+)

@@ -51,6 +51,23 @@ class ReadingSession:
 class IdeasManager:
     """研究想法管理器"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="ideas_manager",
+        module_type=ModuleType.MANAGER,
+        display_name="想法管理器",
+        description="管理研究想法，支持版本追踪和串行/并行阅读模式",
+        constructor_params=[
+            ConstructorParam(name="storage_dir", from_config="storage.ideas", default="knowledge/ideas"),
+        ],
+        capabilities=[
+            Capability(name="create_idea", description="记录研究想法", tags=["idea", "create"]),
+            Capability(name="list_ideas", description="列出研究想法", tags=["idea", "list"]),
+            Capability(name="get_idea_stats", description="获取想法统计", tags=["idea", "stats"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, storage_dir: Path):
         """
         初始化想法管理器

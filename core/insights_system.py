@@ -103,6 +103,25 @@ class IdeaFromInsights:
 class InsightsManager:
     """洞察管理器"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="insights_manager",
+        module_type=ModuleType.MANAGER,
+        display_name="洞察管理器",
+        description="管理阅读论文时的洞察记录，支持洞察到想法的转化",
+        constructor_params=[
+            ConstructorParam(name="storage_dir", from_config="storage.knowledge", default="knowledge"),
+        ],
+        capabilities=[
+            Capability(name="create_insight", description="创建洞察记录", tags=["insight", "create"]),
+            Capability(name="list_insights", description="列出洞察记录", tags=["insight", "list"]),
+            Capability(name="start_reading_session", description="开始阅读会话", tags=["session"]),
+            Capability(name="end_reading_session", description="结束阅读会话", tags=["session"]),
+            Capability(name="get_insight_stats", description="获取洞察统计", tags=["insight", "stats"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, storage_dir: Path):
         """
         初始化洞察管理器

@@ -111,6 +111,24 @@ class ReadingQuestionSession:
 class QuestionsManager:
     """疑问系统管理器"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="questions_manager",
+        module_type=ModuleType.MANAGER,
+        display_name="疑问管理器",
+        description="记录和管理阅读论文时产生的疑问，追踪问题解决过程",
+        constructor_params=[
+            ConstructorParam(name="knowledge_dir", from_config="storage.knowledge", default="knowledge"),
+        ],
+        capabilities=[
+            Capability(name="create_question", description="记录疑问", tags=["question", "create"]),
+            Capability(name="list_questions", description="列出疑问", tags=["question", "list"]),
+            Capability(name="add_answer", description="为疑问添加答案", tags=["question", "answer"]),
+            Capability(name="get_question_stats", description="获取疑问统计", tags=["question", "stats"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     # 问题类型
     QUESTION_TYPES = {
         'understanding': '理解性问题（不理解概念、方法等）',

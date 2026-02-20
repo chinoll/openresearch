@@ -43,6 +43,24 @@ class TexDocument:
 class TeXParser:
     """TeX 源文件解析器"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="tex_parser",
+        module_type=ModuleType.CORE_SERVICE,
+        display_name="TeX 解析器",
+        description="解析 LaTeX 源文件，提取结构化信息（标题、作者、章节、引用、公式等）",
+        constructor_params=[
+            ConstructorParam(name="extract_comments", default=True),
+            ConstructorParam(name="extract_equations", default=True),
+            ConstructorParam(name="extract_citations", default=True),
+        ],
+        capabilities=[
+            Capability(name="parse_tex", description="解析 TeX 文件内容", tags=["parsing", "tex"]),
+            Capability(name="find_main_tex", description="在目录中查找主 TeX 文件", tags=["parsing", "tex"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, extract_comments: bool = True,
                  extract_equations: bool = True,
                  extract_citations: bool = True):

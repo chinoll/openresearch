@@ -136,6 +136,23 @@ class StructuredIdea:
 class StructuredIdeasManager:
     """结构化想法管理器"""
 
+    from core.registry import ModuleRegistration, ModuleType, Capability, ConstructorParam
+    REGISTRATION = ModuleRegistration(
+        name="structured_ideas_manager",
+        module_type=ModuleType.MANAGER,
+        display_name="结构化想法管理器",
+        description="管理结构化学术想法，支持引用来源和想法交叉变异",
+        constructor_params=[
+            ConstructorParam(name="storage_dir", from_config="storage.structured_ideas", default="knowledge/structured_ideas"),
+        ],
+        capabilities=[
+            Capability(name="create_atomic_idea", description="创建原子想法", tags=["idea", "structured", "create"]),
+            Capability(name="create_composite_idea", description="创建组合想法", tags=["idea", "structured", "create"]),
+            Capability(name="get_idea_lineage", description="获取想法谱系", tags=["idea", "structured", "lineage"]),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, ConstructorParam
+
     def __init__(self, storage_dir: Path):
         """
         初始化管理器

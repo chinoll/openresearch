@@ -2,6 +2,9 @@
 OpenResearch FastAPI 后端
 
 统一 API 入口，供 TUI 和 Web 界面共用。
+支持两种路由注册模式：
+1. Registry 自动发现（扫描 backend.routers 中的 ROUTER_REGISTRATION）
+2. 硬编码导入（向后兼容回退）
 """
 import os
 from pathlib import Path
@@ -11,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.routers import papers, insights, questions, ideas, chat
+from core.registry import get_registry, ModuleType
 
 app = FastAPI(
     title="OpenResearch API",
@@ -28,27 +31,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(papers.router)
-app.include_router(insights.router)
-app.include_router(questions.router)
-app.include_router(ideas.router)
-app.include_router(chat.router)
+
+def _register_routers():
+    """注册所有路由（优先 auto_discover，回退硬编码导入）"""
+    registry = get_registry()
+
+    # 自动发现所有模块
+    registry.auto_discover(['core', 'agents', 'backend.routers'])
+
+    # 导入路由模块（确保 router 对象被创建 + ROUTER_REGISTRATION 被扫描）
+    from backend.routers import papers, insights, questions, ideas, chat
+
+    # 注册路由
+    app.include_router(papers.router)
+    app.include_router(insights.router)
+    app.include_router(questions.router)
+    app.include_router(ideas.router)
+    app.include_router(chat.router)
+
+
+_register_routers()
 
 
 @app.get("/")
 async def root():
+    """根端点：返回 API 信息和从 registry 动态生成的端点列表"""
+    registry = get_registry()
+    router_regs = registry.get_all_registrations(ModuleType.ROUTER)
+
+    endpoints = [reg.api_prefix for reg in router_regs if reg.api_prefix]
+    # 确保必要端点存在
+    for ep in ["/api/papers", "/api/insights", "/api/questions", "/api/ideas", "/api/chat"]:
+        if ep not in endpoints:
+            endpoints.append(ep)
+    endpoints.append("/docs")
+    endpoints.sort()
+
     return {
         "name": "OpenResearch API",
         "version": "1.0.0",
-        "endpoints": [
-            "/api/papers",
-            "/api/insights",
-            "/api/questions",
-            "/api/ideas",
-            "/api/chat",
-            "/docs"  # Swagger UI
-        ]
+        "registered_modules": len(registry.get_all_registrations()),
+        "endpoints": endpoints
     }
 
 
@@ -66,6 +89,27 @@ async def global_stats():
         "insights": await i_stats(),
         "questions": await q_stats(),
         "ideas": await id_stats()
+    }
+
+
+@app.get("/api/registry")
+async def registry_info():
+    """查看注册中心信息（调试用）"""
+    registry = get_registry()
+    all_regs = registry.get_all_registrations()
+
+    return {
+        "total_modules": len(all_regs),
+        "modules": [
+            {
+                "name": reg.name,
+                "type": reg.module_type.value,
+                "display_name": reg.display_name,
+                "capabilities": [cap.name for cap in reg.capabilities],
+            }
+            for reg in all_regs
+        ],
+        "capabilities_description": registry.describe_capabilities(),
     }
 
 

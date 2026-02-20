@@ -20,15 +20,49 @@ from prompts.loader import load as load_prompt
 class PaperIngestionAgent(BaseAgent):
     """论文摄入 Agent - 优先 TeX 源文件"""
 
-    def __init__(self, config: AgentConfig, download_dir: Path):
+    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec, ConstructorParam, InputSchema, OutputSchema
+    REGISTRATION = ModuleRegistration(
+        name="paper_ingestion",
+        module_type=ModuleType.AGENT,
+        display_name="论文摄入 Agent",
+        description="下载和解析论文，支持 arXiv TeX 源文件和本地 PDF/TeX",
+        pipeline_stage="ingestion",
+        pipeline_order=10,
+        dependencies=[
+            DependencySpec(name="arxiv_downloader", optional=True),
+            DependencySpec(name="tex_parser", optional=True),
+        ],
+        constructor_params=[
+            ConstructorParam(name="download_dir", from_config="storage.papers", default="./data/papers"),
+        ],
+        capabilities=[
+            Capability(
+                name="ingest_arxiv",
+                description="从 arXiv 下载并解析论文",
+                input_schema=[
+                    InputSchema(name="source", type="str", description="来源类型", enum_values=["arxiv", "local"]),
+                    InputSchema(name="identifier", type="str", description="arXiv ID 或文件路径"),
+                ],
+                output_schema=[
+                    OutputSchema(name="paper_data", type="Dict", description="解析后的论文数据"),
+                ],
+                tags=["ingestion", "arxiv", "paper"],
+            ),
+        ],
+    )
+    del ModuleRegistration, ModuleType, Capability, DependencySpec, ConstructorParam, InputSchema, OutputSchema
+
+    def __init__(self, config: AgentConfig, download_dir: Path,
+                 arxiv_downloader: ArxivDownloader = None,
+                 tex_parser: TeXParser = None):
         super().__init__(config)
 
         self.download_dir = Path(download_dir)
-        self.downloader = ArxivDownloader(
+        self.downloader = arxiv_downloader or ArxivDownloader(
             download_dir=self.download_dir,
             prefer_tex=True
         )
-        self.tex_parser = TeXParser(
+        self.tex_parser = tex_parser or TeXParser(
             extract_comments=True,
             extract_equations=True,
             extract_citations=True
