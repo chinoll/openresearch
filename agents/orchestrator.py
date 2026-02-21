@@ -41,138 +41,60 @@ class OrchestratorAgent(BaseAgent):
 
     def __init__(self,
                  config: AgentConfig,
-                 app_config: dict = None,
-                 # 向后兼容：直接传入路径参数
-                 data_dir: Path = None,
-                 vector_db_path: Path = None,
-                 graph_path: Path = None,
-                 # 通过 registry DI 注入
+                 app_config: dict,
                  vector_store=None,
                  knowledge_graph=None):
         """
         初始化主控 Agent
 
-        支持两种模式:
-        1. Registry 模式: 传入 app_config，通过 registry 获取所有依赖
-        2. 直接模式（向后兼容）: 传入 data_dir/vector_db_path/graph_path
+        Args:
+            config: Agent 配置
+            app_config: 应用配置字典（用于 registry DI 解析）
+            vector_store: 通过 registry DI 注入的向量存储实例
+            knowledge_graph: 通过 registry DI 注入的知识图谱实例
         """
         super().__init__(config)
 
-        self._app_config = app_config or {}
+        self._app_config = app_config
         self._registry = get_registry()
 
-        # 初始化核心组件（优先使用 DI 注入的实例）
-        if vector_store is not None:
-            self.vector_store = vector_store
-        elif vector_db_path:
-            from core.vector_store import VectorStore
-            self.vector_store = VectorStore(
-                db_path=vector_db_path,
-                collection_name="research_papers"
-            )
-            self._registry.set_instance("vector_store", self.vector_store)
-        else:
-            self.vector_store = self._registry.get_instance("vector_store", self._app_config)
+        # 核心组件（通过 DI 注入或 registry 获取）
+        self.vector_store = vector_store or self._registry.get_instance("vector_store", self._app_config)
+        self.knowledge_graph = knowledge_graph or self._registry.get_instance("knowledge_graph", self._app_config)
 
-        if knowledge_graph is not None:
-            self.knowledge_graph = knowledge_graph
-        elif graph_path:
-            from core.knowledge_graph import KnowledgeGraph
-            self.knowledge_graph = KnowledgeGraph(graph_path=graph_path)
-            self._registry.set_instance("knowledge_graph", self.knowledge_graph)
-        else:
-            self.knowledge_graph = self._registry.get_instance("knowledge_graph", self._app_config)
-
-        # data_dir 用于论文存储
-        if data_dir:
-            self.data_dir = Path(data_dir)
-        else:
-            storage = self._app_config.get('storage', {})
-            self.data_dir = Path(storage.get('papers', './data/papers'))
+        # data_dir 从 config 读取
+        storage = self._app_config.get('storage', {})
+        self.data_dir = Path(storage.get('papers', './data/papers'))
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        # 初始化子 Agent（通过 registry 或直接构造）
-        self._init_sub_agents(config)
+        # 初始化子 Agent（通过 registry）
+        self._init_sub_agents()
 
         self.log("Orchestrator Agent initialized")
         self.log(f"Vector store: {self.vector_store.count()} papers")
         self.log(f"Knowledge graph: {self.knowledge_graph.get_statistics()}")
 
-    def _init_sub_agents(self, config: AgentConfig):
-        """
-        初始化所有子 Agent。
+    def _init_sub_agents(self):
+        """通过 registry 初始化所有子 Agent"""
+        from core.registration import agent_factory
 
-        优先通过 registry 获取已注册的 Agent 实例；
-        如果 registry 中没有对应注册，则回退到直接构造。
-        """
-        # 论文摄入 Agent
-        self.ingestion_agent = self._get_or_create_agent(
-            "paper_ingestion",
-            lambda: self._create_ingestion_agent(config)
-        )
-
-        # 知识提取 Agent
-        self.extractor_agent = self._get_or_create_agent(
-            "knowledge_extractor",
-            lambda: self._create_extractor_agent(config)
-        )
-
-        # 关系分析 Agent
-        self.analyzer_agent = self._get_or_create_agent(
-            "relation_analyzer",
-            lambda: self._create_analyzer_agent(config)
-        )
+        self.ingestion_agent = self._create_agent("paper_ingestion")
+        self.extractor_agent = self._create_agent("knowledge_extractor")
+        self.analyzer_agent = self._create_agent("relation_analyzer")
 
         self.log("All sub-agents initialized")
 
-    def _get_or_create_agent(self, name: str, fallback_factory):
-        """通过 registry 获取 Agent 实例，失败时使用回退工厂"""
+    def _create_agent(self, name: str):
+        """通过 registry 创建 Agent 实例"""
+        from core.registration import agent_factory
+
         reg = self._registry.get_registration(name)
-        if reg and reg.cls:
-            try:
-                from core.registration import agent_factory
-                instance = agent_factory(reg.cls, self._app_config)
-                self._registry.set_instance(name, instance)
-                return instance
-            except Exception as e:
-                self.log(f"Registry creation for {name} failed, using fallback: {e}", "warning")
-        return fallback_factory()
+        if not reg or not reg.cls:
+            raise RuntimeError(f"Agent not registered: {name}")
 
-    def _create_ingestion_agent(self, config: AgentConfig):
-        from agents.ingestion import PaperIngestionAgent
-        return PaperIngestionAgent(
-            config=AgentConfig(
-                name="PaperIngestion",
-                model=config.model,
-                api_key=config.api_key,
-                temperature=config.temperature
-            ),
-            download_dir=self.data_dir
-        )
-
-    def _create_extractor_agent(self, config: AgentConfig):
-        from agents.extractor import KnowledgeExtractorAgent
-        return KnowledgeExtractorAgent(
-            config=AgentConfig(
-                name="KnowledgeExtractor",
-                model=config.model,
-                api_key=config.api_key,
-                temperature=0.7
-            )
-        )
-
-    def _create_analyzer_agent(self, config: AgentConfig):
-        from agents.analyzer import RelationAnalyzerAgent
-        return RelationAnalyzerAgent(
-            config=AgentConfig(
-                name="RelationAnalyzer",
-                model=config.model,
-                api_key=config.api_key,
-                temperature=0.7
-            ),
-            vector_store=self.vector_store,
-            knowledge_graph=self.knowledge_graph
-        )
+        instance = agent_factory(reg.cls, self._app_config)
+        self._registry.set_instance(name, instance)
+        return instance
 
     # ==================== 流水线组合 ====================
 
@@ -479,17 +401,29 @@ if __name__ == "__main__":
     import asyncio
 
     async def main():
+        app_config = {
+            'llm': {
+                'model': 'claude-sonnet-4-5-20250929',
+                # 'api_key': 'your-api-key',
+            },
+            'storage': {
+                'papers': './data/papers',
+                'vector_db': './data/vector_db',
+                'graph': './data/knowledge_graph.pkl',
+            },
+        }
+
+        registry = get_registry()
+        registry.auto_discover(['agents', 'core'])
+
         config = AgentConfig(
             name="Orchestrator",
-            model="claude-sonnet-4-5-20250929",
-            # api_key="your-api-key"
+            model=app_config['llm']['model'],
         )
 
         orchestrator = OrchestratorAgent(
             config=config,
-            data_dir=Path("./data/papers"),
-            vector_db_path=Path("./data/vector_db"),
-            graph_path=Path("./data/knowledge_graph.pkl")
+            app_config=app_config,
         )
 
         result = await orchestrator.add_paper(

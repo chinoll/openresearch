@@ -25,15 +25,6 @@ class DeepResearchSystem:
             config_path: 配置文件路径
         """
         self.config = self._load_config(config_path)
-        self.data_dir = Path(self.config.get('storage', {}).get('papers', './data/papers'))
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-
-        # 向量数据库路径
-        self.vector_db_path = Path(self.config.get('storage', {}).get('vector_db', './data/vector_db'))
-
-        # 知识图谱路径
-        self.graph_path = Path(self.config.get('storage', {}).get('graph', './data/knowledge_graph.pkl'))
-        self.graph_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 初始化主控 Agent
         self._init_agents()
@@ -85,13 +76,9 @@ class DeepResearchSystem:
             api_key=llm_config.get('api_key')
         )
 
-        # 初始化主控 Agent（传入 app_config 以支持 registry 路径）
         self.orchestrator = OrchestratorAgent(
             config=agent_config,
             app_config=self.config,
-            data_dir=self.data_dir,
-            vector_db_path=self.vector_db_path,
-            graph_path=self.graph_path
         )
 
     async def add_paper_from_arxiv(self, arxiv_id: str, full_analysis: bool = True) -> dict:

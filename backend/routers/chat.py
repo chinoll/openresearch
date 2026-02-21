@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import anthropic
-from backend.tools import TOOLS, generate_tools_from_registry
+from backend.tools import generate_tools_from_registry
 from prompts.loader import load as load_prompt
 from core.registry import ModuleRegistration, ModuleType, Capability, get_registry
 
@@ -169,7 +169,7 @@ async def chat(req: ChatRequest):
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
-                tools=TOOLS,
+                tools=generate_tools_from_registry(),
                 messages=current_messages
             )
 
@@ -214,17 +214,6 @@ async def chat(req: ChatRequest):
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
-
-
-def _get_tools():
-    """获取工具列表：优先从 registry 生成，回退到静态 TOOLS"""
-    try:
-        generated = generate_tools_from_registry()
-        if generated:
-            return generated
-    except Exception:
-        pass
-    return TOOLS
 
 
 # Router 注册元数据

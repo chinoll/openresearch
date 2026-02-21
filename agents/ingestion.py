@@ -29,8 +29,8 @@ class PaperIngestionAgent(BaseAgent):
         pipeline_stage="ingestion",
         pipeline_order=10,
         dependencies=[
-            DependencySpec(name="arxiv_downloader", optional=True),
-            DependencySpec(name="tex_parser", optional=True),
+            DependencySpec(name="arxiv_downloader"),
+            DependencySpec(name="tex_parser"),
         ],
         constructor_params=[
             ConstructorParam(name="download_dir", from_config="storage.papers", default="./data/papers"),
@@ -58,15 +58,8 @@ class PaperIngestionAgent(BaseAgent):
         super().__init__(config)
 
         self.download_dir = Path(download_dir)
-        self.downloader = arxiv_downloader or ArxivDownloader(
-            download_dir=self.download_dir,
-            prefer_tex=True
-        )
-        self.tex_parser = tex_parser or TeXParser(
-            extract_comments=True,
-            extract_equations=True,
-            extract_citations=True
-        )
+        self.downloader = arxiv_downloader
+        self.tex_parser = tex_parser
 
         self.log("Paper Ingestion Agent initialized")
 

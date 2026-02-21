@@ -2,9 +2,7 @@
 OpenResearch FastAPI 后端
 
 统一 API 入口，供 TUI 和 Web 界面共用。
-支持两种路由注册模式：
-1. Registry 自动发现（扫描 backend.routers 中的 ROUTER_REGISTRATION）
-2. 硬编码导入（向后兼容回退）
+通过 Registry 自动发现路由（扫描 backend.routers 中的 ROUTER_REGISTRATION）。
 """
 import os
 from pathlib import Path
@@ -33,7 +31,7 @@ app.add_middleware(
 
 
 def _register_routers():
-    """注册所有路由（优先 auto_discover，回退硬编码导入）"""
+    """注册所有路由"""
     registry = get_registry()
 
     # 自动发现所有模块
@@ -60,10 +58,6 @@ async def root():
     router_regs = registry.get_all_registrations(ModuleType.ROUTER)
 
     endpoints = [reg.api_prefix for reg in router_regs if reg.api_prefix]
-    # 确保必要端点存在
-    for ep in ["/api/papers", "/api/insights", "/api/questions", "/api/ideas", "/api/chat"]:
-        if ep not in endpoints:
-            endpoints.append(ep)
     endpoints.append("/docs")
     endpoints.sort()
 
