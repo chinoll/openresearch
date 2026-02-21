@@ -1,17 +1,18 @@
 # Deep Research Agent Configuration
 
 # LLM Settings
+# All fields can be overridden by environment variables:
+#   LLM_PROVIDER  → provider
+#   LLM_MODEL     → model
+#   LLM_API_KEY   → api_key   (fallback: ANTHROPIC_API_KEY / OPENAI_API_KEY)
+#   LLM_BASE_URL  → base_url
 llm:
-  provider: "anthropic"  # anthropic, openai, or local
+  provider: "anthropic"  # "anthropic" or "openai" (covers DeepSeek, Ollama, etc.)
   model: "claude-sonnet-4-5-20250929"
   api_key: "YOUR_API_KEY_HERE"
+  base_url: ""  # Custom endpoint, e.g. "https://api.deepseek.com" (empty = SDK default)
   max_tokens: 4096
   temperature: 0.7
-
-# OpenAI (optional)
-openai:
-  api_key: "YOUR_OPENAI_API_KEY"
-  model: "gpt-4-turbo-preview"
 
 # Data Sources
 data_sources:

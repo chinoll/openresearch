@@ -24,6 +24,8 @@ class AgentConfig:
     temperature: float = 0.7
     max_tokens: int = 4096
     api_key: Optional[str] = None
+    provider: Optional[str] = None   # "anthropic" | "openai" | None (auto-detect)
+    base_url: Optional[str] = None   # Custom endpoint; None = SDK default
 
 
 class BaseAgent(ABC):
@@ -37,17 +39,38 @@ class BaseAgent(ABC):
         self.llm_client = self._init_llm_client()
         self.memory: List[Dict] = []  # 对话历史
 
+    def _resolve_provider(self) -> str:
+        """确定 LLM 提供商：优先使用显式 provider，否则从 model 名推断"""
+        if self.config.provider:
+            return self.config.provider
+        model_lower = self.config.model.lower()
+        if "claude" in model_lower:
+            return "anthropic"
+        if "gpt" in model_lower or "o1" in model_lower or "o3" in model_lower:
+            return "openai"
+        # Default to openai for unknown models (OpenAI-compatible API is the most common)
+        return "openai"
+
     def _init_llm_client(self):
         """初始化 LLM 客户端"""
-        # 这里可以根据配置初始化不同的 LLM
-        # 暂时返回 None，在子类中实现
+        provider = self._resolve_provider()
         try:
-            if "claude" in self.config.model.lower():
+            if provider == "anthropic":
                 from anthropic import Anthropic
-                return Anthropic(api_key=self.config.api_key)
-            elif "gpt" in self.config.model.lower():
+                kwargs = {}
+                if self.config.api_key:
+                    kwargs["api_key"] = self.config.api_key
+                if self.config.base_url:
+                    kwargs["base_url"] = self.config.base_url
+                return Anthropic(**kwargs)
+            else:
                 from openai import OpenAI
-                return OpenAI(api_key=self.config.api_key)
+                kwargs = {}
+                if self.config.api_key:
+                    kwargs["api_key"] = self.config.api_key
+                if self.config.base_url:
+                    kwargs["base_url"] = self.config.base_url
+                return OpenAI(**kwargs)
         except ImportError as e:
             logger.warning(f"LLM client not available: {e}")
         return None

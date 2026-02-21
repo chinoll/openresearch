@@ -51,6 +51,8 @@ def agent_factory(cls: Type, app_config: dict) -> object:
         temperature=llm_config.get('temperature', 0.7),
         max_tokens=llm_config.get('max_tokens', 4096),
         api_key=llm_config.get('api_key'),
+        provider=llm_config.get('provider'),
+        base_url=llm_config.get('base_url'),
     )
 
     # 收集依赖参数

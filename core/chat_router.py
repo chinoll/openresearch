@@ -3,21 +3,65 @@ AI 对话 + Tool Use API
 
 接收自然语言输入，调用 Anthropic API，AI 自动决定调用哪些工具。
 """
-import os
 import json
+import logging
 from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
-import anthropic
 from backend.tools import generate_tools_from_registry
 from prompts.loader import load as load_prompt
 from core.registry import ModuleRegistration, ModuleType, Capability, get_registry
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# Lazy-initialized LLM client and model
+_llm_client = None
+_llm_model = None
+
+
+def _get_llm_client():
+    """获取 LLM 客户端（延迟初始化，读取统一配置）"""
+    global _llm_client, _llm_model
+
+    if _llm_client is not None:
+        return _llm_client, _llm_model
+
+    from core.config import get_app_config
+    config = get_app_config()
+    llm = config.get('llm', {})
+
+    provider = llm.get('provider', '')
+    model = llm.get('model', 'claude-sonnet-4-5-20250929')
+    api_key = llm.get('api_key', '')
+    base_url = llm.get('base_url', '')
+
+    # Auto-detect provider if not set
+    if not provider:
+        if 'claude' in model.lower():
+            provider = 'anthropic'
+        else:
+            provider = 'openai'
+
+    if provider != 'anthropic':
+        logger.warning(
+            f"chat_router uses Anthropic tool-use protocol. "
+            f"Provider '{provider}' may not work correctly for /api/chat."
+        )
+
+    import anthropic
+    kwargs = {}
+    if api_key:
+        kwargs['api_key'] = api_key
+    if base_url:
+        kwargs['base_url'] = base_url
+    _llm_client = anthropic.Anthropic(**kwargs)
+    _llm_model = model
+    return _llm_client, _llm_model
 
 SYSTEM_PROMPT = load_prompt("system/chat_assistant")
 
@@ -78,12 +122,14 @@ async def chat(req: ChatRequest):
     messages.append({"role": "user", "content": req.message})
 
     async def generate():
+        client, model = _get_llm_client()
+
         # 多轮工具调用循环
         current_messages = messages.copy()
 
         for _ in range(5):  # 最多 5 轮工具调用
             response = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
+                model=model,
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
                 tools=generate_tools_from_registry(),

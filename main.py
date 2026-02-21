@@ -10,6 +10,7 @@ import json
 import sys
 
 from core.base_agent import AgentConfig
+from core.config import load_app_config
 from core.orchestrator import OrchestratorAgent
 from core.registry import get_registry
 
@@ -24,41 +25,10 @@ class DeepResearchSystem:
         Args:
             config_path: 配置文件路径
         """
-        self.config = self._load_config(config_path)
+        self.config = load_app_config(config_path)
 
         # 初始化主控 Agent
         self._init_agents()
-
-    def _load_config(self, config_path: Path = None) -> dict:
-        """加载配置文件"""
-        import yaml
-
-        if config_path and config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
-
-        # 默认配置
-        return {
-            'llm': {
-                'provider': 'anthropic',
-                'model': 'claude-sonnet-4-5-20250929',
-                'api_key': '',
-                'max_tokens': 4096,
-                'temperature': 0.7
-            },
-            'storage': {
-                'papers': './data/papers',
-                'metadata': './data/metadata',
-                'reports': './data/reports'
-            },
-            'data_sources': {
-                'arxiv': {
-                    'enabled': True,
-                    'prefer_tex_source': True,
-                    'fallback_to_pdf': True
-                }
-            }
-        }
 
     def _init_agents(self):
         """初始化主控 Agent"""
@@ -73,7 +43,9 @@ class DeepResearchSystem:
             model=llm_config.get('model', 'claude-sonnet-4-5-20250929'),
             temperature=llm_config.get('temperature', 0.7),
             max_tokens=llm_config.get('max_tokens', 4096),
-            api_key=llm_config.get('api_key')
+            api_key=llm_config.get('api_key'),
+            provider=llm_config.get('provider'),
+            base_url=llm_config.get('base_url'),
         )
 
         self.orchestrator = OrchestratorAgent(

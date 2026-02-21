@@ -31,7 +31,9 @@ class IdeasCLI:
             name="InsightAgent",
             model=llm_config.get('model', 'claude-sonnet-4-5-20250929'),
             api_key=llm_config.get('api_key', ''),
-            temperature=0.7
+            temperature=0.7,
+            provider=llm_config.get('provider'),
+            base_url=llm_config.get('base_url'),
         )
 
         self.insight_agent = InsightAgent(
@@ -395,7 +397,9 @@ async def main():
     args = parser.parse_args()
 
     # 初始化 CLI
-    cli = IdeasCLI(storage_dir=Path("./data/research_notes"))
+    from core.config import load_app_config
+    config = load_app_config()
+    cli = IdeasCLI(storage_dir=Path("./data/research_notes"), config=config)
 
     # 执行命令
     if args.start_serial:

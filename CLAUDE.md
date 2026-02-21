@@ -114,4 +114,19 @@ All plugins are auto-discovered via `Registry.auto_discover(['core', 'plugins'])
 
 Copy `config/config.example.yaml` to `config/config.yaml` and set API keys. Default LLM is `claude-sonnet-4-5-20250929`. Config controls LLM provider, TeX/PDF parser options, vector DB settings, and storage paths.
 
+### Unified LLM Configuration
+
+All LLM settings are in the `llm:` section of `config/config.yaml` and can be overridden by environment variables:
+
+| Config key | Env var | Default | Description |
+|---|---|---|---|
+| `provider` | `LLM_PROVIDER` | `"anthropic"` | `"anthropic"` or `"openai"` (covers DeepSeek, Ollama, etc.) |
+| `model` | `LLM_MODEL` | `"claude-sonnet-4-5-20250929"` | Model name |
+| `api_key` | `LLM_API_KEY` | `""` | API key (fallback: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) |
+| `base_url` | `LLM_BASE_URL` | `""` | Custom endpoint (empty = SDK default) |
+
+Priority: environment variable > config.yaml > built-in default. If `provider` is empty, it is auto-detected from the model name (`claude` → anthropic, otherwise → openai).
+
+Configuration is loaded by `core/config.py` (`load_app_config()` / `get_app_config()`), shared by CLI (`main.py`), FastAPI (`backend/main.py`), and chat router (`core/chat_router.py`).
+
 Data is stored under `data/` (papers, metadata, vector_db, reports, knowledge_graph.pkl).

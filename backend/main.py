@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.config import load_app_config
 from core.registry import get_registry, ModuleType
 
 app = FastAPI(
@@ -32,6 +33,9 @@ app.add_middleware(
 
 def _register_routers():
     """自动发现并注册所有路由"""
+    # Load unified config (config.yaml + env overrides) before router init
+    load_app_config()
+
     registry = get_registry()
 
     # 自动发现所有模块（扫描 core/ 和 plugins/ 下的 REGISTRATION / ROUTER_REGISTRATION）
