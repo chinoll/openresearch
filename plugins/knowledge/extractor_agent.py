@@ -3,15 +3,12 @@ Knowledge Extractor Agent - 知识提取 Agent
 深度分析论文内容，提取核心知识和洞察
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 import json
 import re
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from core.base_agent import BaseAgent, AgentConfig, AgentResponse
 from prompts.loader import load as load_prompt
 
 

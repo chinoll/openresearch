@@ -134,9 +134,12 @@ class Registry:
         self._tag_index: Dict[str, List[str]] = {}     # tag -> [module_names]
 
     def register(self, reg: ModuleRegistration):
-        """注册模块"""
-        if reg.name in self._registrations:
-            logger.warning(f"Module already registered, overwriting: {reg.name}")
+        """注册模块（同 class 重复注册静默跳过）"""
+        existing = self._registrations.get(reg.name)
+        if existing is not None:
+            if existing.cls is not None and existing.cls is reg.cls:
+                return  # 同一个类，跳过
+            logger.debug(f"Module re-registered: {reg.name}")
 
         self._registrations[reg.name] = reg
 

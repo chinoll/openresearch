@@ -11,7 +11,7 @@ import json
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.structured_ideas import (
+from plugins.ideas.structured import (
     StructuredIdeasManager,
     StructuredIdea,
     Source,

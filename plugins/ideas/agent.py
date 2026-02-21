@@ -3,16 +3,13 @@ Insight Agent - 研究洞察 Agent
 帮助用户管理研究想法，发现想法之间的联系，提示需要更新的想法
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 import json
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from core.base_agent import BaseAgent, AgentConfig, AgentResponse
 from prompts.loader import load as load_prompt
-from core.ideas_manager import IdeasManager, Idea
+from plugins.ideas.manager import IdeasManager, Idea
 
 
 class InsightAgent(BaseAgent):
@@ -485,8 +482,8 @@ if __name__ == "__main__":
     from pathlib import Path
 
     async def main():
-        from core.ideas_manager import IdeasManager
-        from core.vector_store import VectorStore
+        from plugins.ideas.manager import IdeasManager
+        from plugins.knowledge.vector_store import VectorStore
 
         # 初始化组件
         ideas_manager = IdeasManager(storage_dir=Path("./data/research_notes"))

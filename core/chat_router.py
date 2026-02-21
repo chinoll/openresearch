@@ -11,9 +11,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import anthropic
 from backend.tools import generate_tools_from_registry
 from prompts.loader import load as load_prompt
@@ -44,18 +41,18 @@ def _build_tool_dispatch():
     if _TOOL_DISPATCH:
         return
 
-    from backend.routers.papers import DownloadRequest, download_paper, list_papers, get_paper
-    from backend.routers.insights import (
+    from plugins.papers.router import DownloadRequest, download_paper, list_papers, get_paper
+    from plugins.insights.router import (
         CreateInsightRequest, create_insight, list_insights,
         StartSessionRequest, start_session, end_session,
         get_stats as insight_stats
     )
-    from backend.routers.questions import (
+    from plugins.questions.router import (
         CreateQuestionRequest, create_question, list_questions,
         AddAnswerRequest, add_answer,
         get_stats as question_stats
     )
-    from backend.routers.ideas import (
+    from plugins.ideas.router import (
         CreateIdeaRequest, create_idea, list_ideas,
         get_stats as idea_stats
     )

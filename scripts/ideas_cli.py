@@ -11,9 +11,9 @@ import json
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.ideas_manager import IdeasManager
-from agents.insight import InsightAgent
-from agents.base_agent import AgentConfig
+from plugins.ideas.manager import IdeasManager
+from plugins.ideas.agent import InsightAgent
+from core.base_agent import AgentConfig
 
 
 class IdeasCLI:

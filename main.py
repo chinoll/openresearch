@@ -9,8 +9,8 @@ from pathlib import Path
 import json
 import sys
 
-from agents.base_agent import AgentConfig
-from agents.orchestrator import OrchestratorAgent
+from core.base_agent import AgentConfig
+from core.orchestrator import OrchestratorAgent
 from core.registry import get_registry
 
 
@@ -64,7 +64,7 @@ class DeepResearchSystem:
         """初始化主控 Agent"""
         # 自动发现并注册所有模块
         registry = get_registry()
-        registry.auto_discover(['agents', 'core'])
+        registry.auto_discover(['plugins', 'core'])
 
         llm_config = self.config.get('llm', {})
 

@@ -4,9 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from core.questions_system import QuestionsManager
+from plugins.questions.manager import QuestionsManager
 from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])

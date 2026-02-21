@@ -41,7 +41,7 @@ def agent_factory(cls: Type, app_config: dict) -> object:
     Returns:
         Agent 实例
     """
-    from agents.base_agent import AgentConfig
+    from core.base_agent import AgentConfig
 
     llm_config = app_config.get('llm', {})
 

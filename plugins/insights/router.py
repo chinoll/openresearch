@@ -4,9 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from core.insights_system import InsightsManager
+from plugins.insights.manager import InsightsManager
 from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])

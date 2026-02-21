@@ -35,17 +35,21 @@ def _register_routers():
     registry = get_registry()
 
     # 自动发现所有模块
-    registry.auto_discover(['core', 'agents', 'backend.routers'])
+    registry.auto_discover(['core', 'plugins'])
 
     # 导入路由模块（确保 router 对象被创建 + ROUTER_REGISTRATION 被扫描）
-    from backend.routers import papers, insights, questions, ideas, chat
+    from plugins.papers.router import router as papers_router
+    from plugins.insights.router import router as insights_router
+    from plugins.questions.router import router as questions_router
+    from plugins.ideas.router import router as ideas_router
+    from core.chat_router import router as chat_router
 
     # 注册路由
-    app.include_router(papers.router)
-    app.include_router(insights.router)
-    app.include_router(questions.router)
-    app.include_router(ideas.router)
-    app.include_router(chat.router)
+    app.include_router(papers_router)
+    app.include_router(insights_router)
+    app.include_router(questions_router)
+    app.include_router(ideas_router)
+    app.include_router(chat_router)
 
 
 _register_routers()
@@ -72,10 +76,10 @@ async def root():
 @app.get("/api/stats")
 async def global_stats():
     """全局统计"""
-    from backend.routers.papers import list_papers
-    from backend.routers.insights import get_stats as i_stats
-    from backend.routers.questions import get_stats as q_stats
-    from backend.routers.ideas import get_stats as id_stats
+    from plugins.papers.router import list_papers
+    from plugins.insights.router import get_stats as i_stats
+    from plugins.questions.router import get_stats as q_stats
+    from plugins.ideas.router import get_stats as id_stats
 
     papers_data = await list_papers()
     return {

@@ -42,6 +42,7 @@ papers/*/paper.pdf
 papers/*/*.tar.gz
 *.log
 
-# Data files (large)
-knowledge/
-papers/
+# Data files (large, root-level only)
+/knowledge/
+/papers/
+data/

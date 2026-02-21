@@ -5,14 +5,11 @@ Orchestrator Agent - 主控 Agent
 通过 Registry 获取依赖，支持动态流水线组合。
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 import json
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from core.base_agent import BaseAgent, AgentConfig, AgentResponse
 from core.registry import get_registry, ModuleRegistration, ModuleType
 
 
@@ -414,7 +411,7 @@ if __name__ == "__main__":
         }
 
         registry = get_registry()
-        registry.auto_discover(['agents', 'core'])
+        registry.auto_discover(['plugins', 'core'])
 
         config = AgentConfig(
             name="Orchestrator",

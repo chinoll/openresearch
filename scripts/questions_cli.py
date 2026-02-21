@@ -14,7 +14,7 @@ from typing import Optional
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.questions_system import QuestionsManager, Question
+from plugins.questions.manager import QuestionsManager, Question
 
 try:
     from colorama import init, Fore, Style

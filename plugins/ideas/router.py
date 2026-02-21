@@ -4,9 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from core.ideas_manager import IdeasManager
+from plugins.ideas.manager import IdeasManager
 from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/ideas", tags=["ideas"])

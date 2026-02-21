@@ -11,7 +11,7 @@ import json
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.insights_system import (
+from plugins.insights.manager import (
     InsightsManager,
     Insight,
     InsightType,

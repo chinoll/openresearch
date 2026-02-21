@@ -3,17 +3,13 @@ Paper Ingestion Agent - 论文摄入 Agent
 负责下载、解析论文，优先处理 TeX 源文件
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import json
 
-# 添加父目录到路径
-sys.path.append(str(Path(__file__).parent.parent))
-
-from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
-from core.arxiv_downloader import ArxivDownloader
-from core.tex_parser import TeXParser, TexDocument
+from core.base_agent import BaseAgent, AgentConfig, AgentResponse
+from plugins.papers.downloader import ArxivDownloader
+from plugins.papers.tex_parser import TeXParser, TexDocument
 from prompts.loader import load as load_prompt
 
 

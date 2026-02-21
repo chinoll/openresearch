@@ -4,9 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from core.arxiv_downloader import ArxivDownloader
+from plugins.papers.downloader import ArxivDownloader
 from core.registry import ModuleRegistration, ModuleType, Capability, InputSchema
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])

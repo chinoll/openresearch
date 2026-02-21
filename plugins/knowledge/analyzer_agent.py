@@ -3,17 +3,14 @@ Relation Analyzer Agent - 关系分析 Agent
 分析论文之间的关系，构建知识网络
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
+from core.base_agent import BaseAgent, AgentConfig, AgentResponse
 from prompts.loader import load as load_prompt
-from core.vector_store import VectorStore
-from core.knowledge_graph import KnowledgeGraph
+from plugins.knowledge.vector_store import VectorStore
+from plugins.knowledge.knowledge_graph import KnowledgeGraph
 
 
 class RelationAnalyzerAgent(BaseAgent):
