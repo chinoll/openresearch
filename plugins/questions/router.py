@@ -173,3 +173,29 @@ ROUTER_REGISTRATION = ModuleRegistration(
         ),
     ],
 )
+
+
+# Tool handlers — 供 chat_router 自动收集
+async def _h_create_question(tool_input):
+    req = CreateQuestionRequest(**tool_input)
+    return await create_question(req)
+
+async def _h_list_questions(tool_input):
+    return await list_questions(
+        paper_id=tool_input.get("paper_id"),
+        status=tool_input.get("status"),
+        question_type=tool_input.get("question_type"),
+        min_importance=tool_input.get("min_importance")
+    )
+
+async def _h_add_answer(tool_input):
+    ti = dict(tool_input)
+    question_id = ti.pop("question_id")
+    req = AddAnswerRequest(**ti)
+    return await add_answer(question_id, req)
+
+TOOL_HANDLERS = {
+    "create_question": _h_create_question,
+    "list_questions": _h_list_questions,
+    "add_answer": _h_add_answer,
+}

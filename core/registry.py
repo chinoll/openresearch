@@ -132,6 +132,7 @@ class Registry:
         self._instances: Dict[str, Any] = {}
         self._capability_index: Dict[str, str] = {}   # capability_name -> module_name
         self._tag_index: Dict[str, List[str]] = {}     # tag -> [module_names]
+        self._source_modules: Dict[str, Any] = {}      # reg_name -> Python module 对象
 
     def register(self, reg: ModuleRegistration):
         """注册模块（同 class 重复注册静默跳过）"""
@@ -320,11 +321,42 @@ class Registry:
                     if reg.cls is None:
                         reg.cls = obj
                     self.register(reg)
+                    self._source_modules[reg.name] = module
 
             # 模块级别 ROUTER_REGISTRATION
             if attr_name == 'ROUTER_REGISTRATION' and isinstance(obj, ModuleRegistration):
                 # 对于 router，cls 保留为 None（路由是模块级对象）
                 self.register(obj)
+                self._source_modules[obj.name] = module
+
+    def get_router_objects(self) -> list:
+        """返回 [(reg, router_obj), ...] — 所有 ROUTER 类型注册及其 router 对象"""
+        result = []
+        for reg in self.get_all_registrations(ModuleType.ROUTER):
+            module = self._source_modules.get(reg.name)
+            if module and hasattr(module, 'router'):
+                result.append((reg, module.router))
+        return result
+
+    def get_all_tool_handlers(self) -> Dict[str, Callable]:
+        """合并所有 router 模块的 TOOL_HANDLERS 字典"""
+        handlers = {}
+        for reg in self.get_all_registrations(ModuleType.ROUTER):
+            module = self._source_modules.get(reg.name)
+            if module and hasattr(module, 'TOOL_HANDLERS'):
+                handlers.update(module.TOOL_HANDLERS)
+        return handlers
+
+    def get_stats_handlers(self) -> Dict[str, Callable]:
+        """收集所有 router 模块的 get_stats 函数，以领域名为 key"""
+        handlers = {}
+        for reg in self.get_all_registrations(ModuleType.ROUTER):
+            module = self._source_modules.get(reg.name)
+            if module and hasattr(module, 'get_stats'):
+                # 用注册名去掉 _router 后缀作为 domain key
+                domain = reg.name.replace('_router', '')
+                handlers[domain] = module.get_stats
+        return handlers
 
     def reset(self):
         """重置注册中心（用于测试）"""
@@ -332,6 +364,7 @@ class Registry:
         self._instances.clear()
         self._capability_index.clear()
         self._tag_index.clear()
+        self._source_modules.clear()
 
 
 # ==================== 辅助函数 ====================

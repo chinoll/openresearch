@@ -90,8 +90,15 @@ The `DeepResearchSystem` class in `main.py` is the CLI entry point — it create
 ### Prompt Template System
 All LLM prompts live in `prompts/` as `.txt` files organized by agent (e.g., `prompts/extractor/contributions.txt`). Load with `prompts.loader.load("extractor/contributions", title=..., abstract=...)` — uses `{{variable}}` substitution.
 
+### Plugin Auto-Loading
+All plugins are auto-discovered via `Registry.auto_discover(['core', 'plugins'])`. No hardcoded registration required — adding a new plugin to `plugins/` with `ROUTER_REGISTRATION` and/or class-level `REGISTRATION` is sufficient. The registry collects:
+- **Router objects** (`get_router_objects()`): auto-mounted in `backend/main.py`
+- **Tool handlers** (`get_all_tool_handlers()`): each router module exports a `TOOL_HANDLERS` dict, auto-collected by `core/chat_router.py`
+- **Stats handlers** (`get_stats_handlers()`): each router module's `get_stats()` function, auto-aggregated for `/api/stats`
+- **Pipeline agents** (`get_pipeline_modules()`): agents declare `pipeline_stage` in their REGISTRATION, auto-discovered by the orchestrator
+
 ### REST API (FastAPI)
-`backend/main.py` mounts routers from `plugins/*/router.py` and `core/chat_router.py`: papers, insights, questions, ideas, chat — all under `/api/`. Auto-generated docs at `/docs`. Both TUI and Web UI consume this API via a shared TypeScript client at `ui/shared/api/client.ts`.
+`backend/main.py` auto-mounts all routers discovered by the registry from `plugins/*/router.py` and `core/chat_router.py` — all under `/api/`. Auto-generated docs at `/docs`. Both TUI and Web UI consume this API via a shared TypeScript client at `ui/shared/api/client.ts`.
 
 ### Frontend Architecture
 - **Shared layer** (`ui/shared/`): API client, types, and command definitions shared between TUI and Web

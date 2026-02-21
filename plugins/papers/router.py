@@ -104,3 +104,21 @@ ROUTER_REGISTRATION = ModuleRegistration(
         ),
     ],
 )
+
+
+# Tool handlers — 供 chat_router 自动收集
+async def _h_download_paper(tool_input):
+    req = DownloadRequest(arxiv_id=tool_input["arxiv_id"])
+    return await download_paper(req)
+
+async def _h_list_papers(tool_input):
+    return await list_papers()
+
+async def _h_get_paper_info(tool_input):
+    return await get_paper(tool_input["paper_id"])
+
+TOOL_HANDLERS = {
+    "download_paper": _h_download_paper,
+    "list_papers": _h_list_papers,
+    "get_paper_info": _h_get_paper_info,
+}

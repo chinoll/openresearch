@@ -72,14 +72,16 @@ class OrchestratorAgent(BaseAgent):
         self.log(f"Knowledge graph: {self.knowledge_graph.get_statistics()}")
 
     def _init_sub_agents(self):
-        """通过 registry 初始化所有子 Agent"""
-        from core.registration import agent_factory
+        """通过 registry 自动发现并初始化所有 pipeline agent"""
+        self._stage_agents = {}  # stage -> [agent_instances]
+        for reg in self._registry.get_pipeline_modules():
+            instance = self._create_agent(reg.name)
+            stage = reg.pipeline_stage
+            if stage not in self._stage_agents:
+                self._stage_agents[stage] = []
+            self._stage_agents[stage].append(instance)
 
-        self.ingestion_agent = self._create_agent("paper_ingestion")
-        self.extractor_agent = self._create_agent("knowledge_extractor")
-        self.analyzer_agent = self._create_agent("relation_analyzer")
-
-        self.log("All sub-agents initialized")
+        self.log(f"Auto-loaded {sum(len(v) for v in self._stage_agents.values())} sub-agents")
 
     def _create_agent(self, name: str):
         """通过 registry 创建 Agent 实例"""
@@ -92,6 +94,11 @@ class OrchestratorAgent(BaseAgent):
         instance = agent_factory(reg.cls, self._app_config)
         self._registry.set_instance(name, instance)
         return instance
+
+    def _get_agent(self, stage: str):
+        """获取指定 stage 的第一个 agent"""
+        agents = self._stage_agents.get(stage, [])
+        return agents[0] if agents else None
 
     # ==================== 流水线组合 ====================
 
@@ -185,7 +192,7 @@ class OrchestratorAgent(BaseAgent):
         try:
             # Step 1: 论文摄入
             self.log("Step 1/4: Paper Ingestion")
-            ingestion_result = await self.ingestion_agent.process({
+            ingestion_result = await self._get_agent("ingestion").process({
                 'source': source,
                 'identifier': identifier
             })
@@ -212,7 +219,7 @@ class OrchestratorAgent(BaseAgent):
 
             # Step 2: 知识提取
             self.log("\nStep 2/4: Knowledge Extraction")
-            extraction_result = await self.extractor_agent.process({
+            extraction_result = await self._get_agent("extraction").process({
                 'paper_data': paper_data,
                 'extraction_tasks': [
                     'contributions',
@@ -245,7 +252,7 @@ class OrchestratorAgent(BaseAgent):
 
             # Step 4: 关系分析
             self.log("\nStep 4/4: Relation Analysis")
-            analysis_result = await self.analyzer_agent.process({
+            analysis_result = await self._get_agent("analysis").process({
                 'paper_id': paper_id,
                 'paper_data': paper_data,
                 'analysis_tasks': ['citations', 'similarities', 'topics', 'evolution']
@@ -354,7 +361,7 @@ class OrchestratorAgent(BaseAgent):
             'metadata': paper['metadata']
         }
 
-        analysis_result = await self.analyzer_agent.process({
+        analysis_result = await self._get_agent("analysis").process({
             'paper_id': paper_id,
             'paper_data': paper_data,
             'analysis_tasks': ['citations', 'similarities', 'topics', 'evolution']
@@ -372,7 +379,7 @@ class OrchestratorAgent(BaseAgent):
                 error="Need at least 2 papers to compare"
             ).to_dict()
 
-        comparison = await self.analyzer_agent.compare_papers(paper_ids)
+        comparison = await self._get_agent("analysis").compare_papers(paper_ids)
         return AgentResponse(success=True, data=comparison).to_dict()
 
     def get_statistics(self) -> Dict:

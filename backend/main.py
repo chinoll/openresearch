@@ -31,25 +31,15 @@ app.add_middleware(
 
 
 def _register_routers():
-    """注册所有路由"""
+    """自动发现并注册所有路由"""
     registry = get_registry()
 
-    # 自动发现所有模块
+    # 自动发现所有模块（扫描 core/ 和 plugins/ 下的 REGISTRATION / ROUTER_REGISTRATION）
     registry.auto_discover(['core', 'plugins'])
 
-    # 导入路由模块（确保 router 对象被创建 + ROUTER_REGISTRATION 被扫描）
-    from plugins.papers.router import router as papers_router
-    from plugins.insights.router import router as insights_router
-    from plugins.questions.router import router as questions_router
-    from plugins.ideas.router import router as ideas_router
-    from core.chat_router import router as chat_router
-
-    # 注册路由
-    app.include_router(papers_router)
-    app.include_router(insights_router)
-    app.include_router(questions_router)
-    app.include_router(ideas_router)
-    app.include_router(chat_router)
+    # 自动挂载所有 router
+    for reg, router_obj in registry.get_router_objects():
+        app.include_router(router_obj)
 
 
 _register_routers()
@@ -75,19 +65,12 @@ async def root():
 
 @app.get("/api/stats")
 async def global_stats():
-    """全局统计"""
-    from plugins.papers.router import list_papers
-    from plugins.insights.router import get_stats as i_stats
-    from plugins.questions.router import get_stats as q_stats
-    from plugins.ideas.router import get_stats as id_stats
-
-    papers_data = await list_papers()
-    return {
-        "papers": {"total": len(papers_data.get("papers", []))},
-        "insights": await i_stats(),
-        "questions": await q_stats(),
-        "ideas": await id_stats()
-    }
+    """全局统计 — 自动收集所有插件的 get_stats"""
+    registry = get_registry()
+    stats = {}
+    for domain, handler in registry.get_stats_handlers().items():
+        stats[domain] = await handler()
+    return stats
 
 
 @app.get("/api/registry")

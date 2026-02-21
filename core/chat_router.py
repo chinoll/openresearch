@@ -37,103 +37,23 @@ _TOOL_DISPATCH = {}
 
 
 def _build_tool_dispatch():
-    """构建工具分发表（延迟初始化，避免循环导入）"""
+    """构建工具分发表 — 自动收集所有插件的 TOOL_HANDLERS"""
     if _TOOL_DISPATCH:
         return
 
-    from plugins.papers.router import DownloadRequest, download_paper, list_papers, get_paper
-    from plugins.insights.router import (
-        CreateInsightRequest, create_insight, list_insights,
-        StartSessionRequest, start_session, end_session,
-        get_stats as insight_stats
-    )
-    from plugins.questions.router import (
-        CreateQuestionRequest, create_question, list_questions,
-        AddAnswerRequest, add_answer,
-        get_stats as question_stats
-    )
-    from plugins.ideas.router import (
-        CreateIdeaRequest, create_idea, list_ideas,
-        get_stats as idea_stats
-    )
+    registry = get_registry()
 
-    async def _download_paper(tool_input):
-        req = DownloadRequest(arxiv_id=tool_input["arxiv_id"])
-        return await download_paper(req)
+    # 自动收集所有插件的 TOOL_HANDLERS
+    _TOOL_DISPATCH.update(registry.get_all_tool_handlers())
 
-    async def _list_papers(tool_input):
-        return await list_papers()
-
-    async def _get_paper_info(tool_input):
-        return await get_paper(tool_input["paper_id"])
-
-    async def _create_insight(tool_input):
-        req = CreateInsightRequest(**tool_input)
-        return await create_insight(req)
-
-    async def _list_insights(tool_input):
-        return await list_insights(
-            paper_id=tool_input.get("paper_id"),
-            insight_type=tool_input.get("insight_type"),
-            unconverted_only=tool_input.get("unconverted_only", False)
-        )
-
-    async def _create_question(tool_input):
-        req = CreateQuestionRequest(**tool_input)
-        return await create_question(req)
-
-    async def _list_questions(tool_input):
-        return await list_questions(
-            paper_id=tool_input.get("paper_id"),
-            status=tool_input.get("status"),
-            question_type=tool_input.get("question_type"),
-            min_importance=tool_input.get("min_importance")
-        )
-
-    async def _add_answer(tool_input):
-        ti = dict(tool_input)
-        question_id = ti.pop("question_id")
-        req = AddAnswerRequest(**ti)
-        return await add_answer(question_id, req)
-
-    async def _create_idea(tool_input):
-        req = CreateIdeaRequest(**tool_input)
-        return await create_idea(req)
-
-    async def _list_ideas(tool_input):
-        return await list_ideas(status=tool_input.get("status"))
-
-    async def _start_reading_session(tool_input):
-        req = StartSessionRequest(paper_id=tool_input["paper_id"])
-        return await start_session(req)
-
-    async def _end_reading_session(tool_input):
-        return await end_session()
-
+    # 聚合统计（跨所有插件）
     async def _get_statistics(tool_input):
-        papers = await list_papers()
-        return {
-            "papers": {"total": len(papers.get("papers", []))},
-            "insights": await insight_stats(),
-            "questions": await question_stats(),
-            "ideas": await idea_stats()
-        }
+        stats = {}
+        for domain, handler in registry.get_stats_handlers().items():
+            stats[domain] = await handler()
+        return stats
 
-    _TOOL_DISPATCH.update({
-        "download_paper": _download_paper,
-        "list_papers": _list_papers,
-        "get_paper_info": _get_paper_info,
-        "create_insight": _create_insight,
-        "list_insights": _list_insights,
-        "create_question": _create_question,
-        "list_questions": _list_questions,
-        "add_answer": _add_answer,
-        "create_idea": _create_idea,
-        "list_ideas": _list_ideas,
-        "start_reading_session": _start_reading_session,
-        "end_reading_session": _end_reading_session,
-        "get_statistics": _get_statistics,
-    })
+    _TOOL_DISPATCH["get_statistics"] = _get_statistics
 
 
 async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Any:

@@ -125,3 +125,30 @@ ROUTER_REGISTRATION = ModuleRegistration(
         ),
     ],
 )
+
+
+# Tool handlers — 供 chat_router 自动收集
+async def _h_create_insight(tool_input):
+    req = CreateInsightRequest(**tool_input)
+    return await create_insight(req)
+
+async def _h_list_insights(tool_input):
+    return await list_insights(
+        paper_id=tool_input.get("paper_id"),
+        insight_type=tool_input.get("insight_type"),
+        unconverted_only=tool_input.get("unconverted_only", False)
+    )
+
+async def _h_start_reading_session(tool_input):
+    req = StartSessionRequest(paper_id=tool_input["paper_id"])
+    return await start_session(req)
+
+async def _h_end_reading_session(tool_input):
+    return await end_session()
+
+TOOL_HANDLERS = {
+    "create_insight": _h_create_insight,
+    "list_insights": _h_list_insights,
+    "start_reading_session": _h_start_reading_session,
+    "end_reading_session": _h_end_reading_session,
+}
