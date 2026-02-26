@@ -63,7 +63,20 @@ def _get_llm_client():
     _llm_model = model
     return _llm_client, _llm_model
 
-SYSTEM_PROMPT = load_prompt("system/chat_assistant")
+_system_prompt_cache = None
+
+
+def _get_system_prompt() -> str:
+    """动态生成系统提示词：静态模板 + registry 扫描的工具能力"""
+    global _system_prompt_cache
+    if _system_prompt_cache is not None:
+        return _system_prompt_cache
+
+    base = load_prompt("system/chat_assistant")
+    registry = get_registry()
+    capabilities = registry.describe_capabilities()
+    _system_prompt_cache = f"{base}\n\n## 可用工具\n{capabilities}"
+    return _system_prompt_cache
 
 
 class Message(BaseModel):
@@ -131,7 +144,7 @@ async def chat(req: ChatRequest):
             response = client.messages.create(
                 model=model,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
+                system=_get_system_prompt(),
                 tools=generate_tools_from_registry(),
                 messages=current_messages
             )
@@ -154,10 +167,14 @@ async def chat(req: ChatRequest):
                 break
 
             # 执行工具调用
+            _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations"}
             tool_results = []
             for tool_call in tool_calls:
                 # 通知前端正在调用工具
                 yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_call.name, 'input': tool_call.input})}\n\n"
+
+                if tool_call.name in _LONG_RUNNING_TOOLS:
+                    yield f"data: {json.dumps({'type': 'progress', 'content': f'正在执行 {tool_call.name}，可能需要一些时间...'})}\n\n"
 
                 result = await execute_tool(tool_call.name, dict(tool_call.input))
 

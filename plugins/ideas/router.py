@@ -88,11 +88,16 @@ ROUTER_REGISTRATION = ModuleRegistration(
 
 # Tool handlers — 供 chat_router 自动收集
 async def _h_create_idea(tool_input):
-    req = CreateIdeaRequest(**tool_input)
-    return await create_idea(req)
+    result = await create_idea(CreateIdeaRequest(**tool_input))
+    if isinstance(result, dict):
+        result["display_type"] = "confirmation"
+    return result
 
 async def _h_list_ideas(tool_input):
-    return await list_ideas(status=tool_input.get("status"))
+    result = await list_ideas(status=tool_input.get("status"))
+    if isinstance(result, dict):
+        result["display_type"] = "idea_list"
+    return result
 
 TOOL_HANDLERS = {
     "create_idea": _h_create_idea,
