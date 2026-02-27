@@ -127,7 +127,7 @@ Key design:
 - **`RESEARCH_TOOL_DEF`**: Anthropic tool_use definition for the `research` tool (internal to Team agents, not exposed to top-level chat).
 - **`TeamAgentWrapper`**: Always wraps Team member agents. When `depth < max_depth`, `process()` uses ToolUseRunner + `[RESEARCH_TOOL_DEF]`; otherwise falls back to `call_llm`.
 
-Prompt: `prompts/system/recursive_chat.txt` with `{{depth}}`/`{{max_depth}}` variables.
+Prompt: Reuses `chat_assistant.txt` (via `_get_system_prompt()`) with a recursive mode header prepended.
 
 ### Structured LLM Output
 `BaseAgent.call_llm_structured()` forces structured JSON output via:

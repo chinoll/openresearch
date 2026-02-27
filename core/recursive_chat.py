@@ -13,8 +13,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from prompts.loader import load as load_prompt
-
 logger = logging.getLogger(__name__)
 
 
@@ -73,11 +71,13 @@ async def run_recursive_chat(
 
     client, model = _get_llm_client()
 
-    # 加载系统提示词
-    system_prompt = load_prompt(
-        "system/recursive_chat",
-        depth=str(depth),
-        max_depth=str(max_depth),
+    # 复用 chat_assistant 系统提示词，前置递归模式声明
+    from core.chat_router import _get_system_prompt
+    base_prompt = _get_system_prompt()
+    system_prompt = (
+        f"[递归研究模式 depth={depth}/{max_depth}] "
+        f"你正在为 Team Agent 查找资料，完成后直接给出结论性回答。\n\n"
+        + base_prompt
     )
 
     # 组装工具列表：完整权限
