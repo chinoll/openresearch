@@ -60,14 +60,13 @@ plugins/
 ├── ideas/           # Ideas domain
 │   ├── manager.py, structured.py, agent.py, router.py
 core/  (shared infrastructure)
-├── registry.py        # Module registry (plugin system core)
+├── registry.py        # Module registry (plugin system core, ModuleType: TOOL/SUBAGENT/ROUTER)
 ├── registration.py    # @register_module decorator + agent_factory
 ├── base_agent.py      # BaseAgent ABC (LLM client, memory, call_llm(), call_llm_structured())
 ├── tool_use_runner.py # ToolUseRunner (generic Anthropic tool-use loop executor)
-├── chat_router.py     # AI chat + Tool Use API (/api/chat)
+├── chat_router.py     # AI chat + Tool Use API (/api/chat) + built-in subagent tools (Team)
 ├── team.py            # Agent Team engine (TeamContext, TeamCoordinator, Team, factories)
-├── team_schemas.py    # COORDINATOR_DECISION_SCHEMA
-└── team_router.py     # Team tools (run_team, run_ad_hoc_team, list_teams)
+└── team_schemas.py    # COORDINATOR_DECISION_SCHEMA
 ```
 
 ### LLM-Orchestrated Multi-Agent System
@@ -110,7 +109,7 @@ Key components:
 - **Team**: Execution engine — loops coordinator decisions, delegates to members, passes data via blackboard. Safety limit via `max_turns`.
 - **TeamDefinition / TeamMemberSpec**: Declarative team definitions exported as `TEAM_DEFINITIONS` module-level constant (auto-discovered by registry).
 
-Tools exposed via `core/team_router.py`:
+Team tools are built into `core/chat_router.py` (not a separate plugin):
 - `run_team(team_name, task, initial_data?)` — run a predefined team
 - `run_ad_hoc_team(agent_names[], task, initial_data?)` — dynamically assemble and run
 - `list_teams()` — list available teams and team-ready agents
@@ -150,13 +149,23 @@ Each extractor prompt includes:
 - Missing-info handling instructions
 - `{{prior_context}}` variable for cross-task context sharing
 
+### Plugin Classification: TOOL vs SUBAGENT
+Modules that expose LLM-callable tools are classified into two types:
+- **TOOL** (`ModuleType.TOOL`): Simple function calls — CRUD, search, extraction. All domain plugins use this type.
+- **SUBAGENT** (`ModuleType.SUBAGENT`): Complex multi-agent collaboration (Team). Currently no plugins use this type; Team tools are built into `chat_router.py`.
+- **ROUTER** (`ModuleType.ROUTER`): Reserved for `chat_router` itself (the chat API).
+
+`TOOL_PROVIDING_TYPES = {ROUTER, TOOL, SUBAGENT}` — the set of module types that can provide tools and routers.
+
 ### Plugin Auto-Loading
 All plugins are auto-discovered via `Registry.auto_discover(['core', 'plugins'])`. No hardcoded registration required — adding a new plugin to `plugins/` with `ROUTER_REGISTRATION` and/or class-level `REGISTRATION` is sufficient. The registry collects:
-- **Router objects** (`get_router_objects()`): auto-mounted in `backend/main.py`
-- **Tool handlers** (`get_all_tool_handlers()`): each router module exports a `TOOL_HANDLERS` dict, auto-collected by `core/chat_router.py`
-- **Stats handlers** (`get_stats_handlers()`): each router module's `get_stats()` function, auto-aggregated for `/api/stats`
+- **Router objects** (`get_router_objects()`): auto-mounted in `backend/main.py` — scans all `TOOL_PROVIDING_TYPES`
+- **Tool handlers** (`get_all_tool_handlers()`): each module exports a `TOOL_HANDLERS` dict, auto-collected by `core/chat_router.py`
+- **Stats handlers** (`get_stats_handlers()`): each module's `get_stats()` function, auto-aggregated for `/api/stats`
 - **Team definitions** (`get_all_team_definitions()`): modules exporting `TEAM_DEFINITIONS` list, auto-collected by registry
 - **Team-ready agents** (`get_team_ready_agents()`): agents with `team_export` in their REGISTRATION
+
+Tool generation: `generate_tools_from_registry()` in `backend/tools.py` generates Anthropic tool definitions from `TOOL_PROVIDING_TYPES` modules. `generate_subagent_tools()` in `chat_router.py` generates the built-in Team tool definitions. `get_all_tools()` combines both.
 
 ### REST API (FastAPI)
 `backend/main.py` auto-mounts all routers discovered by the registry from `plugins/*/router.py` and `core/chat_router.py` — all under `/api/`. Auto-generated docs at `/docs`. Both TUI and Web UI consume this API via a shared TypeScript client at `ui/shared/api/client.ts`.

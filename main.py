@@ -22,9 +22,8 @@ class TaskSystem:
 
     async def chat_execute(self, message: str, history: list = None) -> str:
         """通过 LLM + tool-use 执行任务（使用 ToolUseRunner）"""
-        from core.chat_router import _get_llm_client, _get_system_prompt, execute_tool
+        from core.chat_router import _get_llm_client, _get_system_prompt, execute_tool, get_all_tools
         from core.tool_use_runner import ToolUseRunner
-        from backend.tools import generate_tools_from_registry
 
         client, model = _get_llm_client()
         messages = [{"role": m["role"], "content": m["content"]} for m in (history or [])]
@@ -34,7 +33,7 @@ class TaskSystem:
             client=client,
             model=model,
             system_prompt=_get_system_prompt(),
-            tools=generate_tools_from_registry(),
+            tools=get_all_tools(),
             execute_tool=execute_tool,
             on_text=lambda text: print(text),
             on_tool_call=lambda name, _: print(f"  → {name}"),

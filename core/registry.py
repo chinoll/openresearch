@@ -26,6 +26,12 @@ class ModuleType(Enum):
     CORE_SERVICE = "core_service"
     MANAGER = "manager"
     ROUTER = "router"
+    TOOL = "tool"            # 简单函数调用（CRUD、搜索、提取）
+    SUBAGENT = "subagent"    # 复杂多 Agent 协作（Team）
+
+
+# 所有可提供 LLM 工具的模块类型
+TOOL_PROVIDING_TYPES = {ModuleType.ROUTER, ModuleType.TOOL, ModuleType.SUBAGENT}
 
 
 # ==================== 注册数据结构 ====================
@@ -201,18 +207,34 @@ class Registry:
         return [self._registrations[n] for n in module_names if n in self._registrations]
 
     def describe_capabilities(self) -> str:
-        """生成人类可读的能力描述文本（供 orchestrator LLM 路由）"""
-        lines = []
+        """生成人类可读的能力描述文本（供 orchestrator LLM 路由），按 TOOL / SUBAGENT 分组"""
+        tool_lines = []
+        subagent_lines = []
+
         for reg in self._registrations.values():
             if not reg.capabilities:
                 continue
-            lines.append(f"\n## {reg.display_name or reg.name} ({reg.module_type.value})")
+
+            section = f"\n### {reg.display_name or reg.name}"
             if reg.description:
-                lines.append(f"  {reg.description}")
+                section += f"\n  {reg.description}"
             for cap in reg.capabilities:
-                lines.append(f"  - {cap.name}: {cap.description}")
+                section += f"\n  - {cap.name}: {cap.description}"
                 if cap.tags:
-                    lines.append(f"    tags: {', '.join(cap.tags)}")
+                    section += f"\n    tags: {', '.join(cap.tags)}"
+
+            if reg.module_type == ModuleType.SUBAGENT:
+                subagent_lines.append(section)
+            elif reg.module_type in (ModuleType.TOOL, ModuleType.ROUTER):
+                tool_lines.append(section)
+
+        lines = []
+        if tool_lines:
+            lines.append("\n## 原子工具（优先使用）")
+            lines.extend(tool_lines)
+        if subagent_lines:
+            lines.append("\n## 子 Agent 协作（仅在原子工具无法完成时使用）")
+            lines.extend(subagent_lines)
         return "\n".join(lines)
 
     def get_instance(self, name: str, config: dict = None) -> Any:
@@ -337,27 +359,33 @@ class Registry:
                     logger.debug(f"Registered team definition: {td.name}")
 
     def get_router_objects(self) -> list:
-        """返回 [(reg, router_obj), ...] — 所有 ROUTER 类型注册及其 router 对象"""
+        """返回 [(reg, router_obj), ...] — 所有可提供工具的模块中有 FastAPI router 的"""
         result = []
-        for reg in self.get_all_registrations(ModuleType.ROUTER):
+        for reg in self._registrations.values():
+            if reg.module_type not in TOOL_PROVIDING_TYPES:
+                continue
             module = self._source_modules.get(reg.name)
             if module and hasattr(module, 'router'):
                 result.append((reg, module.router))
         return result
 
     def get_all_tool_handlers(self) -> Dict[str, Callable]:
-        """合并所有 router 模块的 TOOL_HANDLERS 字典"""
+        """合并所有可提供工具的模块的 TOOL_HANDLERS 字典"""
         handlers = {}
-        for reg in self.get_all_registrations(ModuleType.ROUTER):
+        for reg in self._registrations.values():
+            if reg.module_type not in TOOL_PROVIDING_TYPES:
+                continue
             module = self._source_modules.get(reg.name)
             if module and hasattr(module, 'TOOL_HANDLERS'):
                 handlers.update(module.TOOL_HANDLERS)
         return handlers
 
     def get_stats_handlers(self) -> Dict[str, Callable]:
-        """收集所有 router 模块的 get_stats 函数，以领域名为 key"""
+        """收集所有可提供工具的模块的 get_stats 函数，以领域名为 key"""
         handlers = {}
-        for reg in self.get_all_registrations(ModuleType.ROUTER):
+        for reg in self._registrations.values():
+            if reg.module_type not in TOOL_PROVIDING_TYPES:
+                continue
             module = self._source_modules.get(reg.name)
             if module and hasattr(module, 'get_stats'):
                 # 用注册名去掉 _router 后缀作为 domain key

@@ -2,6 +2,7 @@
 AI 对话 + Tool Use API
 
 接收自然语言输入，调用 Anthropic API，AI 自动决定调用哪些工具。
+Team（子 Agent 协作）工具内置于此，不通过插件注册。
 """
 import json
 import logging
@@ -94,12 +95,213 @@ class ChatRequest(BaseModel):
     history: List[Message] = []
 
 
+# ==================== 内置 SubAgent 工具（Team） ====================
+
+_subagent_app_config = None
+_subagent_registry = None
+
+
+def _ensure_subagent_init():
+    """Lazy init: 加载配置、获取 registry（供 subagent handlers 使用）"""
+    global _subagent_app_config, _subagent_registry
+    if _subagent_registry is not None:
+        return
+    from core.config import get_app_config
+    _subagent_app_config = get_app_config()
+    _subagent_registry = get_registry()
+
+
+async def _h_run_team(tool_input: Dict) -> Dict:
+    """运行预定义 Team"""
+    _ensure_subagent_init()
+    from core.team import create_team_from_definition
+
+    team_name = tool_input.get("team_name", "")
+    task = tool_input.get("task", "")
+    initial_data = tool_input.get("initial_data") or {}
+    max_turns = tool_input.get("max_turns")
+
+    if not team_name:
+        return {"error": "缺少 team_name 参数"}
+    if not task:
+        return {"error": "缺少 task 参数"}
+
+    team_def = _subagent_registry.get_team_definition(team_name)
+    if not team_def:
+        available = list(_subagent_registry.get_all_team_definitions().keys())
+        return {"error": f"未找到 Team: {team_name}，可用: {available}"}
+
+    try:
+        team = create_team_from_definition(team_def, _subagent_app_config, max_turns=max_turns)
+        result = await team.run(task, initial_data=initial_data)
+        return {
+            "display_type": "team_result",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Team {team_name} 执行失败: {e}")
+        return {"error": f"Team 执行失败: {e}"}
+
+
+async def _h_run_ad_hoc_team(tool_input: Dict) -> Dict:
+    """动态组队运行"""
+    _ensure_subagent_init()
+    from core.team import create_ad_hoc_team
+
+    agent_names = tool_input.get("agent_names", [])
+    task = tool_input.get("task", "")
+    initial_data = tool_input.get("initial_data") or {}
+    max_turns = tool_input.get("max_turns", 10)
+
+    if not agent_names or len(agent_names) < 2:
+        return {"error": "至少需要 2 个 agent 组队"}
+    if not task:
+        return {"error": "缺少 task 参数"}
+
+    try:
+        team = create_ad_hoc_team(
+            name=f"ad_hoc_{'_'.join(agent_names[:3])}",
+            agent_names=agent_names,
+            app_config=_subagent_app_config,
+            max_turns=max_turns,
+        )
+        result = await team.run(task, initial_data=initial_data)
+        return {
+            "display_type": "team_result",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Ad-hoc team 执行失败: {e}")
+        return {"error": f"Team 执行失败: {e}"}
+
+
+async def _h_list_teams(tool_input: Dict) -> Dict:
+    """列出可用 Team 和可组队 Agent"""
+    _ensure_subagent_init()
+
+    # 预定义 Teams
+    team_defs = _subagent_registry.get_all_team_definitions()
+    teams_list = []
+    for name, td in team_defs.items():
+        teams_list.append({
+            "name": name,
+            "display_name": getattr(td, 'display_name', ''),
+            "description": getattr(td, 'description', ''),
+            "members": [
+                {"role": m.role, "agent": m.agent_name, "description": m.description}
+                for m in getattr(td, 'members', [])
+            ],
+            "default_max_turns": getattr(td, 'default_max_turns', 10),
+            "tags": getattr(td, 'tags', []),
+        })
+
+    # 可组队 Agents（声明了 team_export 的）
+    team_ready = _subagent_registry.get_team_ready_agents()
+    agents_list = []
+    for reg in team_ready:
+        agents_list.append({
+            "name": reg.name,
+            "display_name": reg.display_name,
+            "role": reg.team_export.default_role,
+            "description": reg.team_export.description,
+        })
+
+    return {
+        "display_type": "team_list",
+        "predefined_teams": teams_list,
+        "team_ready_agents": agents_list,
+    }
+
+
+# SubAgent 工具的 handler 映射（内置，不通过 TOOL_HANDLERS 暴露）
+_SUBAGENT_HANDLERS = {
+    "run_team": _h_run_team,
+    "run_ad_hoc_team": _h_run_ad_hoc_team,
+    "list_teams": _h_list_teams,
+}
+
+
+def generate_subagent_tools() -> List[Dict[str, Any]]:
+    """生成内置 subagent 工具的 Anthropic tool_use 定义"""
+    return [
+        {
+            "name": "run_team",
+            "description": "运行预定义 Agent Team。Team 内多个 agent 协同完成任务，由 LLM 协调决策。",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "team_name": {
+                        "type": "string",
+                        "description": "Team 名称（通过 list_teams 获取）",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "任务描述",
+                    },
+                    "initial_data": {
+                        "type": "object",
+                        "description": "初始数据（写入共享黑板）",
+                    },
+                    "max_turns": {
+                        "type": "integer",
+                        "description": "最大执行轮数（覆盖默认值）",
+                    },
+                },
+                "required": ["team_name", "task"],
+            },
+        },
+        {
+            "name": "run_ad_hoc_team",
+            "description": "动态组建 Agent Team 并运行。选择多个 agent 临时组队协作完成任务。",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "agent_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Agent 注册名列表（至少 2 个）",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "任务描述",
+                    },
+                    "initial_data": {
+                        "type": "object",
+                        "description": "初始数据（写入共享黑板）",
+                    },
+                    "max_turns": {
+                        "type": "integer",
+                        "description": "最大执行轮数",
+                        "default": 10,
+                    },
+                },
+                "required": ["agent_names", "task"],
+            },
+        },
+        {
+            "name": "list_teams",
+            "description": "列出所有可用的预定义 Team 和可组队的 Agent",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    ]
+
+
+def get_all_tools() -> List[Dict[str, Any]]:
+    """获取完整工具列表：registry 工具 + 内置 subagent 工具"""
+    return generate_tools_from_registry() + generate_subagent_tools()
+
+
+# ==================== 工具分发 ====================
+
 # 工具名 → 执行函数 的静态映射（用于快速分发）
 _TOOL_DISPATCH = {}
 
 
 def _build_tool_dispatch():
-    """构建工具分发表 — 自动收集所有插件的 TOOL_HANDLERS"""
+    """构建工具分发表 — 自动收集所有插件的 TOOL_HANDLERS + 内置 subagent handlers"""
     if _TOOL_DISPATCH:
         return
 
@@ -107,6 +309,9 @@ def _build_tool_dispatch():
 
     # 自动收集所有插件的 TOOL_HANDLERS
     _TOOL_DISPATCH.update(registry.get_all_tool_handlers())
+
+    # 内置 subagent 工具
+    _TOOL_DISPATCH.update(_SUBAGENT_HANDLERS)
 
     # 聚合统计（跨所有插件）
     async def _get_statistics(tool_input):
@@ -144,7 +349,8 @@ async def chat(req: ChatRequest):
 
         client, model = _get_llm_client()
 
-        _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations"}
+        _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations",
+                               "run_team", "run_ad_hoc_team"}
 
         # Use ToolUseRunner pattern with SSE-compatible callbacks
         # For SSE we need fine-grained control per iteration, so we keep a customized loop
@@ -155,7 +361,7 @@ async def chat(req: ChatRequest):
                 model=model,
                 max_tokens=2048,
                 system=_get_system_prompt(),
-                tools=generate_tools_from_registry(),
+                tools=get_all_tools(),
                 messages=current_messages
             )
 

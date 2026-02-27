@@ -254,7 +254,7 @@ TOOL_HANDLERS = {
 
 ROUTER_REGISTRATION = ModuleRegistration(
     name="pipeline_router",
-    module_type=ModuleType.ROUTER,
+    module_type=ModuleType.TOOL,
     display_name="研究流水线工具",
     description="论文分析原子工具（摄入、知识提取、入库、关系分析、搜索），由 AI 自主编排",
     capabilities=[

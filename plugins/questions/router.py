@@ -125,7 +125,7 @@ async def end_session():
 # Router 注册元数据
 ROUTER_REGISTRATION = ModuleRegistration(
     name="questions_router",
-    module_type=ModuleType.ROUTER,
+    module_type=ModuleType.TOOL,
     display_name="疑问管理 API",
     description="疑问记录、答案、状态追踪、会话",
     api_prefix="/api/questions",

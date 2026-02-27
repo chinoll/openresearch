@@ -83,7 +83,7 @@ async def get_paper(paper_id: str):
 # Router 注册元数据
 ROUTER_REGISTRATION = ModuleRegistration(
     name="papers_router",
-    module_type=ModuleType.ROUTER,
+    module_type=ModuleType.TOOL,
     display_name="论文管理 API",
     description="论文下载、列表、详情",
     api_prefix="/api/papers",

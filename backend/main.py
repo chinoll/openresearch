@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.config import load_app_config
-from core.registry import get_registry, ModuleType
+from core.registry import get_registry, ModuleType, TOOL_PROVIDING_TYPES
 
 app = FastAPI(
     title="OpenResearch API",
@@ -53,9 +53,12 @@ _register_routers()
 async def root():
     """根端点：返回 API 信息和从 registry 动态生成的端点列表"""
     registry = get_registry()
-    router_regs = registry.get_all_registrations(ModuleType.ROUTER)
+    all_regs = registry.get_all_registrations()
 
-    endpoints = [reg.api_prefix for reg in router_regs if reg.api_prefix]
+    endpoints = [
+        reg.api_prefix for reg in all_regs
+        if reg.module_type in TOOL_PROVIDING_TYPES and reg.api_prefix
+    ]
     endpoints.append("/docs")
     endpoints.sort()
 

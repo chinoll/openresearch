@@ -57,7 +57,7 @@ async def get_idea(idea_id: str):
 # Router 注册元数据
 ROUTER_REGISTRATION = ModuleRegistration(
     name="ideas_router",
-    module_type=ModuleType.ROUTER,
+    module_type=ModuleType.TOOL,
     display_name="想法管理 API",
     description="研究想法记录、列表、统计",
     api_prefix="/api/ideas",

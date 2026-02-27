@@ -16,10 +16,13 @@ def generate_tools_from_registry() -> List[Dict[str, Any]]:
     Returns:
         工具定义列表（Anthropic tool_use 格式）
     """
-    from core.registry import get_registry, ModuleType
+    from core.registry import get_registry, ModuleType, TOOL_PROVIDING_TYPES
 
     registry = get_registry()
-    router_regs = registry.get_all_registrations(ModuleType.ROUTER)
+    router_regs = [
+        reg for reg in registry.get_all_registrations()
+        if reg.module_type in TOOL_PROVIDING_TYPES
+    ]
 
     tools = []
     for reg in router_regs:

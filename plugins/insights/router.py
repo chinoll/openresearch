@@ -82,7 +82,7 @@ async def end_session():
 # Router 注册元数据
 ROUTER_REGISTRATION = ModuleRegistration(
     name="insights_router",
-    module_type=ModuleType.ROUTER,
+    module_type=ModuleType.TOOL,
     display_name="洞察管理 API",
     description="洞察记录、列表、统计、阅读会话",
     api_prefix="/api/insights",
