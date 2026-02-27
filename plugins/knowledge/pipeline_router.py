@@ -269,6 +269,7 @@ ROUTER_REGISTRATION = ModuleRegistration(
                             enum_values=["arxiv", "local"], default="arxiv"),
             ],
             tags=["pipeline", "ingestion"],
+            long_running=True,
         ),
         Capability(
             name="extract_knowledge",
@@ -281,6 +282,7 @@ ROUTER_REGISTRATION = ModuleRegistration(
                             default=None, required=False),
             ],
             tags=["pipeline", "extraction"],
+            long_running=True,
         ),
         Capability(
             name="add_to_knowledge_base",
@@ -305,6 +307,7 @@ ROUTER_REGISTRATION = ModuleRegistration(
                             default=None, required=False),
             ],
             tags=["pipeline", "analysis"],
+            long_running=True,
         ),
         Capability(
             name="search_papers",

@@ -70,6 +70,7 @@ class Capability:
     input_schema: List[InputSchema] = field(default_factory=list)
     output_schema: List[OutputSchema] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    long_running: bool = False   # 标记为耗时工具（UI 可展示进度提示）
 
 
 @dataclass
@@ -392,6 +393,15 @@ class Registry:
                 domain = reg.name.replace('_router', '')
                 handlers[domain] = module.get_stats
         return handlers
+
+    def get_long_running_tools(self) -> set:
+        """返回所有标记为 long_running 的工具名集合"""
+        return {
+            cap.name
+            for reg in self._registrations.values()
+            for cap in reg.capabilities
+            if cap.long_running
+        }
 
     # ==================== Team 查询 ====================
 

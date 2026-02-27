@@ -349,8 +349,8 @@ async def chat(req: ChatRequest):
 
         client, model = _get_llm_client()
 
-        _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations",
-                               "run_team", "run_ad_hoc_team"}
+        _LONG_RUNNING_TOOLS = get_registry().get_long_running_tools()
+        _LONG_RUNNING_TOOLS.update({"run_team", "run_ad_hoc_team"})  # 内置 subagent 工具
 
         # Use ToolUseRunner pattern with SSE-compatible callbacks
         # For SSE we need fine-grained control per iteration, so we keep a customized loop
