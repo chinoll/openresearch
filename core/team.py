@@ -190,7 +190,7 @@ class TeamAgentWrapper(BaseAgent):
         委派给被包装 agent 的 process 方法。
 
         如果 input_data 包含 team_instruction：
-        - depth < max_depth: 使用 ToolUseRunner + research 工具执行（可递归查资料）
+        - depth < max_depth: 直接启动递归 chat（完整工具权限），LLM 自主决定调工具/team/research
         - depth >= max_depth: 退化为 call_llm（纯推理）
 
         否则直接委派给原 agent。
@@ -207,80 +207,36 @@ class TeamAgentWrapper(BaseAgent):
                 )[:3000]
 
             prompt = f"{team_instruction}{context_text}"
-            system_prompt = self._get_system_prompt()
 
-            # 递归能力：depth < max_depth 时使用 ToolUseRunner + research 工具
             if self._recursion_depth < self._max_recursion_depth:
-                result = await self._process_with_research(prompt, system_prompt, parent_task)
+                # 直接启动递归 chat：LLM 自主决定调工具、启子 team、或嵌套 research
+                from core.recursive_chat import run_recursive_chat
+
+                chat_result = await run_recursive_chat(
+                    query=prompt,
+                    context=parent_task,
+                    depth=self._recursion_depth,
+                    max_depth=self._max_recursion_depth,
+                    agent_system_prompt=self._get_system_prompt(),
+                )
+
+                self._research_logs.append(chat_result.get("meta_summary", ""))
+
+                response = chat_result["result"]
+                parsed = self._parse_json_response(response, default=None)
+                result = {"success": True, "data": parsed if parsed is not None else response}
+                result["research_meta"] = chat_result.get("meta_summary", "")
+                return result
             else:
                 # 退化为纯 call_llm
-                result = self._process_plain(prompt, system_prompt)
-
-            return result
+                response = self.call_llm(prompt, self._get_system_prompt())
+                parsed = self._parse_json_response(response, default=None)
+                if parsed is not None:
+                    return {"success": True, "data": parsed}
+                return {"success": True, "data": response}
 
         # 无 team_instruction，直接委派给原 agent
         return await self._wrapped_agent.process(input_data)
-
-    async def _process_with_research(
-        self, prompt: str, system_prompt: str, parent_task: str = "",
-    ) -> Dict:
-        """使用 ToolUseRunner + research 工具处理指令"""
-        from core.recursive_chat import RESEARCH_TOOL_DEF, run_recursive_chat
-        from core.tool_use_runner import ToolUseRunner
-
-        research_logs = []
-
-        async def _execute_tool(tool_name: str, tool_input: Dict) -> Any:
-            """research 工具处理器"""
-            if tool_name == "research":
-                # 将父 team 任务注入 context，由编排 LLM 决定是否传给子 team
-                research_context = tool_input.get("context", "")
-                if parent_task:
-                    research_context = f"[父 Team 任务] {parent_task}\n\n{research_context}".strip()
-                sub_result = await run_recursive_chat(
-                    query=tool_input.get("query", ""),
-                    context=research_context,
-                    depth=self._recursion_depth,
-                    max_depth=self._max_recursion_depth,
-                )
-                research_logs.append(sub_result.get("meta_summary", ""))
-                # 返回完整结果给 agent
-                return sub_result["result"]
-            return {"error": f"未知工具: {tool_name}"}
-
-        messages = [{"role": "user", "content": prompt}]
-
-        runner = ToolUseRunner(
-            client=self.llm_client,
-            model=self.config.model,
-            system_prompt=system_prompt,
-            tools=[RESEARCH_TOOL_DEF],
-            execute_tool=_execute_tool,
-            max_iterations=5,
-        )
-
-        response = await runner.run(messages)
-
-        # 记录元摘要
-        self._research_logs.extend(research_logs)
-
-        # 尝试解析为结构化数据
-        parsed = self._parse_json_response(response, default=None)
-        result = {"success": True, "data": parsed if parsed is not None else response}
-
-        if research_logs:
-            result["research_meta"] = research_logs
-
-        return result
-
-    def _process_plain(self, prompt: str, system_prompt: str) -> Dict:
-        """纯 call_llm 处理（无递归能力）"""
-        response = self.call_llm(prompt, system_prompt)
-
-        parsed = self._parse_json_response(response, default=None)
-        if parsed is not None:
-            return {"success": True, "data": parsed}
-        return {"success": True, "data": response}
 
 
 # ==================== Coordinator（LLM 协调者） ====================

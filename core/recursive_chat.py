@@ -1,8 +1,8 @@
 """
-递归 Chat 引擎 — Team Agent 的研究工具
+递归 Chat 引擎 — Team Agent 的通用执行环境
 
-允许 Team agent 通过 `research` 工具递归调用完整的 tool-use chat，
-自主查找外部信息（搜索论文、提取知识等）来支撑观点。
+Team agent 通过此引擎获得完整 tool-use chat 能力。
+LLM 自主决定调用工具、启动子 Team、或嵌套 research。
 
 递归完成后完整对话历史丢弃（自然 GC），只保留：
 - full_result → 返回给 agent 用于推理
@@ -21,20 +21,20 @@ logger = logging.getLogger(__name__)
 RESEARCH_TOOL_DEF = {
     "name": "research",
     "description": (
-        "递归研究工具：发起一轮完整的 tool-use 对话来查找外部信息。"
-        "拥有所有系统工具（搜索论文、提取知识、Team 协作等）的完整权限。"
-        "当你需要查找资料来支撑观点时使用此工具。"
+        "递归研究工具：发起一轮新的完整 tool-use 对话来深入查找信息。"
+        "新对话拥有所有系统工具的完整权限。"
+        "当现有工具返回的信息不够、需要更深入探索时使用。"
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "研究查询（你想查找什么信息）",
+                "description": "研究查询（你想深入查找什么信息）",
             },
             "context": {
                 "type": "string",
-                "description": "当前上下文（帮助研究更精准）",
+                "description": "传递给子研究的上下文（如父任务需求）",
             },
         },
         "required": ["query"],
@@ -49,19 +49,25 @@ async def run_recursive_chat(
     context: str = "",
     depth: int = 0,
     max_depth: int = 2,
+    agent_system_prompt: str = "",
 ) -> Dict[str, Any]:
     """
-    执行一轮递归研究 chat。
+    启动一轮递归 chat — Team agent 的通用执行环境。
 
-    拥有完整工具权限（TOOL + subagent），可自主使用 search_papers、
-    extract_knowledge、run_team 等。递归 chat 的完整对话历史在函数
-    返回后丢弃（自然 GC）。
+    拥有完整工具权限（TOOL + subagent），LLM 自主决定：
+    - 调用工具（search_papers, extract_knowledge 等）
+    - 启动子 Team（run_team / run_ad_hoc_team）
+    - 嵌套 research（更深层递归）
+    - 或直接推理回答
+
+    对话历史在函数返回后丢弃（自然 GC）。
 
     Args:
-        query: 研究查询
-        context: 当前上下文
+        query: 任务指令 / 研究查询
+        context: 上下文（如父 team 任务描述），由编排 LLM 决定是否传给子调用
         depth: 当前递归深度
         max_depth: 最大递归深度
+        agent_system_prompt: agent 角色的系统提示词（可选，融合到系统提示中）
 
     Returns:
         {"result": full_result, "meta_summary": meta_summary}
@@ -71,22 +77,29 @@ async def run_recursive_chat(
 
     client, model = _get_llm_client()
 
-    # 复用 chat_assistant 系统提示词，前置递归模式声明
+    # 构建系统提示词：基础 chat prompt + agent 角色 prompt + 递归模式声明
     from core.chat_router import _get_system_prompt
     base_prompt = _get_system_prompt()
-    system_prompt = (
-        f"[递归研究模式 depth={depth}/{max_depth}] "
-        f"你正在为 Team Agent 查找资料。返回尽可能多的信息，并对结果来源分类说明：\n"
-        f"- 子 Team 协作结论：标注为 [Team 结论]\n"
+
+    recursive_header = (
+        f"[递归研究模式 depth={depth}/{max_depth}]\n"
+        f"你是 Team 中的一个 Agent，拥有完整工具权限。"
+        f"返回尽可能多的信息，并对结果来源分类说明：\n"
+        f"- 子 Team 协作产出：标注为 [Team 结论]\n"
         f"- 工具直接调用结果：标注为 [工具结果]\n"
-        f"- 自身推理：标注为 [Agent 推理]\n\n"
-        + base_prompt
+        f"- 自身推理：标注为 [Agent 推理]\n"
     )
+
+    parts = [recursive_header]
+    if agent_system_prompt:
+        parts.append(f"\n## 你的角色\n{agent_system_prompt}")
+    parts.append(f"\n{base_prompt}")
+    system_prompt = "\n".join(parts)
 
     # 组装工具列表：完整权限
     tools = get_all_tools()
 
-    # 如果还没达到最大深度，允许再递归
+    # 如果还没达到最大深度，允许嵌套 research
     if depth + 1 < max_depth:
         tools = tools + [RESEARCH_TOOL_DEF]
 
@@ -94,9 +107,8 @@ async def run_recursive_chat(
     tool_log: List[Dict[str, str]] = []
 
     async def _execute_tool(tool_name: str, tool_input: Dict) -> Any:
-        """包装工具执行：拦截 research 和 team 工具，其余委托 chat_router"""
+        """工具分发：拦截 research 和 team 工具注入深度，其余委托 chat_router"""
         if tool_name == "research":
-            # 递归调用
             sub_result = await run_recursive_chat(
                 query=tool_input.get("query", ""),
                 context=tool_input.get("context", ""),
@@ -111,7 +123,7 @@ async def run_recursive_chat(
             return sub_result["result"]
 
         if tool_name in ("run_team", "run_ad_hoc_team"):
-            # Team 工具：传递 recursion_depth 以便子 team 的 agent 也有递归能力
+            # 传递 recursion_depth，子 team 的 agent 也获得递归 chat 能力
             tool_input_with_depth = {**tool_input, "_recursion_depth": depth + 1}
             result = await execute_tool(tool_name, tool_input_with_depth)
             tool_log.append({
@@ -128,10 +140,10 @@ async def run_recursive_chat(
         })
         return result
 
-    # 构建初始消息
+    # 构建初始消息：任务指令 + 上下文
     user_message = query
     if context:
-        user_message = f"研究查询: {query}\n\n当前上下文:\n{context}"
+        user_message = f"{query}\n\n## 上下文\n{context}"
 
     messages = [{"role": "user", "content": user_message}]
 
@@ -174,7 +186,7 @@ def _build_meta_summary(
     """
     构建元摘要（纯字符串拼接，不需要 LLM）。
 
-    格式：[递归研究 depth=N] 查询: ... | 工具调用: ... | 子Team: N | 嵌套递归: N | 结果: N字符
+    格式：[递归 chat depth=N] 查询: ... | 工具调用: ... | 子Team: N | 嵌套递归: N | 结果: N字符
     """
     tool_names = [t["tool"] for t in tool_log]
     team_count = sum(1 for t in tool_names if t in ("run_team", "run_ad_hoc_team"))
@@ -183,7 +195,7 @@ def _build_meta_summary(
     tool_calls_str = ", ".join(tool_names) if tool_names else "无"
 
     return (
-        f"[递归研究 depth={depth}] "
+        f"[递归 chat depth={depth}] "
         f"查询: {query[:60]} | "
         f"工具调用: {tool_calls_str} | "
         f"子Team: {team_count} | "
