@@ -76,7 +76,10 @@ async def run_recursive_chat(
     base_prompt = _get_system_prompt()
     system_prompt = (
         f"[递归研究模式 depth={depth}/{max_depth}] "
-        f"你正在为 Team Agent 查找资料，完成后直接给出结论性回答。\n\n"
+        f"你正在为 Team Agent 查找资料。返回尽可能多的信息，并对结果来源分类说明：\n"
+        f"- 子 Team 协作结论：标注为 [Team 结论]\n"
+        f"- 工具直接调用结果：标注为 [工具结果]\n"
+        f"- 自身推理：标注为 [Agent 推理]\n\n"
         + base_prompt
     )
 
