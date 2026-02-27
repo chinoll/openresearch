@@ -197,6 +197,7 @@ class TeamAgentWrapper(BaseAgent):
         """
         team_instruction = input_data.get("team_instruction", "")
         team_context_data = input_data.get("team_context", {})
+        parent_task = input_data.get("parent_task", "")
 
         if team_instruction:
             context_text = ""
@@ -210,7 +211,7 @@ class TeamAgentWrapper(BaseAgent):
 
             # 递归能力：depth < max_depth 时使用 ToolUseRunner + research 工具
             if self._recursion_depth < self._max_recursion_depth:
-                result = await self._process_with_research(prompt, system_prompt)
+                result = await self._process_with_research(prompt, system_prompt, parent_task)
             else:
                 # 退化为纯 call_llm
                 result = self._process_plain(prompt, system_prompt)
@@ -220,7 +221,9 @@ class TeamAgentWrapper(BaseAgent):
         # 无 team_instruction，直接委派给原 agent
         return await self._wrapped_agent.process(input_data)
 
-    async def _process_with_research(self, prompt: str, system_prompt: str) -> Dict:
+    async def _process_with_research(
+        self, prompt: str, system_prompt: str, parent_task: str = "",
+    ) -> Dict:
         """使用 ToolUseRunner + research 工具处理指令"""
         from core.recursive_chat import RESEARCH_TOOL_DEF, run_recursive_chat
         from core.tool_use_runner import ToolUseRunner
@@ -230,9 +233,13 @@ class TeamAgentWrapper(BaseAgent):
         async def _execute_tool(tool_name: str, tool_input: Dict) -> Any:
             """research 工具处理器"""
             if tool_name == "research":
+                # 将父 team 任务注入 context，由编排 LLM 决定是否传给子 team
+                research_context = tool_input.get("context", "")
+                if parent_task:
+                    research_context = f"[父 Team 任务] {parent_task}\n\n{research_context}".strip()
                 sub_result = await run_recursive_chat(
                     query=tool_input.get("query", ""),
-                    context=tool_input.get("context", ""),
+                    context=research_context,
                     depth=self._recursion_depth,
                     max_depth=self._max_recursion_depth,
                 )
@@ -436,6 +443,7 @@ class Team:
                     **selected_data,
                     "team_instruction": decision.instruction,
                     "team_context": selected_data,
+                    "parent_task": context.task_description,
                 }
 
                 # 执行
