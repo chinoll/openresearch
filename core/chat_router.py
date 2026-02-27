@@ -120,6 +120,9 @@ async def _h_run_team(tool_input: Dict) -> Dict:
     task = tool_input.get("task", "")
     initial_data = tool_input.get("initial_data") or {}
     max_turns = tool_input.get("max_turns")
+    max_recursion_depth = tool_input.get("max_recursion_depth", 2)
+    # 内部参数：递归 chat 传入的当前深度
+    recursion_depth = tool_input.pop("_recursion_depth", 0)
 
     if not team_name:
         return {"error": "缺少 team_name 参数"}
@@ -132,7 +135,12 @@ async def _h_run_team(tool_input: Dict) -> Dict:
         return {"error": f"未找到 Team: {team_name}，可用: {available}"}
 
     try:
-        team = create_team_from_definition(team_def, _subagent_app_config, max_turns=max_turns)
+        team = create_team_from_definition(
+            team_def, _subagent_app_config,
+            max_turns=max_turns,
+            max_recursion_depth=max_recursion_depth,
+            recursion_depth=recursion_depth,
+        )
         result = await team.run(task, initial_data=initial_data)
         return {
             "display_type": "team_result",
@@ -152,6 +160,9 @@ async def _h_run_ad_hoc_team(tool_input: Dict) -> Dict:
     task = tool_input.get("task", "")
     initial_data = tool_input.get("initial_data") or {}
     max_turns = tool_input.get("max_turns", 10)
+    max_recursion_depth = tool_input.get("max_recursion_depth", 2)
+    # 内部参数：递归 chat 传入的当前深度
+    recursion_depth = tool_input.pop("_recursion_depth", 0)
 
     if not agent_names or len(agent_names) < 2:
         return {"error": "至少需要 2 个 agent 组队"}
@@ -164,6 +175,8 @@ async def _h_run_ad_hoc_team(tool_input: Dict) -> Dict:
             agent_names=agent_names,
             app_config=_subagent_app_config,
             max_turns=max_turns,
+            max_recursion_depth=max_recursion_depth,
+            recursion_depth=recursion_depth,
         )
         result = await team.run(task, initial_data=initial_data)
         return {
@@ -246,6 +259,11 @@ def generate_subagent_tools() -> List[Dict[str, Any]]:
                         "type": "integer",
                         "description": "最大执行轮数（覆盖默认值）",
                     },
+                    "max_recursion_depth": {
+                        "type": "integer",
+                        "description": "Agent 递归研究的最大深度（默认 2）",
+                        "default": 2,
+                    },
                 },
                 "required": ["team_name", "task"],
             },
@@ -273,6 +291,11 @@ def generate_subagent_tools() -> List[Dict[str, Any]]:
                         "type": "integer",
                         "description": "最大执行轮数",
                         "default": 10,
+                    },
+                    "max_recursion_depth": {
+                        "type": "integer",
+                        "description": "Agent 递归研究的最大深度（默认 2）",
+                        "default": 2,
                     },
                 },
                 "required": ["agent_names", "task"],

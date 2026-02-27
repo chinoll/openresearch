@@ -149,13 +149,22 @@ class TeamMember:
 
 class TeamAgentWrapper(BaseAgent):
     """
-    包装已有 agent，覆盖 system prompt。
+    包装已有 agent，覆盖 system prompt，支持递归研究能力。
 
     Form 1 的关键：同一个 agent 类，不同的 system prompt 扮演不同角色。
     无需修改原 agent 代码。
+
+    当 recursion_depth < max_recursion_depth 时，agent 在处理 team_instruction
+    时可通过 `research` 工具发起递归 chat（带完整工具权限），自主查找外部信息。
     """
 
-    def __init__(self, agent: BaseAgent, system_prompt_override: str):
+    def __init__(
+        self,
+        agent: BaseAgent,
+        system_prompt_override: str = "",
+        recursion_depth: int = 0,
+        max_recursion_depth: int = 2,
+    ):
         # 不调用 super().__init__，直接复用被包装 agent 的属性
         self.config = agent.config
         self.name = agent.name
@@ -163,19 +172,33 @@ class TeamAgentWrapper(BaseAgent):
         self.memory: List[Dict] = []
         self._wrapped_agent = agent
         self._system_prompt_override = system_prompt_override
+        self._recursion_depth = recursion_depth
+        self._max_recursion_depth = max_recursion_depth
+        self._research_logs: List[str] = []  # 元摘要记录
+
+    def _get_system_prompt(self) -> str:
+        """获取系统提示词：优先使用覆盖值，否则尝试取原 agent 的"""
+        if self._system_prompt_override:
+            return self._system_prompt_override
+        getter = getattr(self._wrapped_agent, '_get_system_prompt', None)
+        if getter:
+            return getter()
+        return ""
 
     async def process(self, input_data: Dict) -> Dict:
         """
         委派给被包装 agent 的 process 方法。
 
-        如果 input_data 包含 team_instruction，则先用覆盖的 system prompt
-        进行一次 LLM 调用来处理指令，否则直接委派。
+        如果 input_data 包含 team_instruction：
+        - depth < max_depth: 使用 ToolUseRunner + research 工具执行（可递归查资料）
+        - depth >= max_depth: 退化为 call_llm（纯推理）
+
+        否则直接委派给原 agent。
         """
         team_instruction = input_data.get("team_instruction", "")
         team_context_data = input_data.get("team_context", {})
 
         if team_instruction:
-            # 用覆盖的 system prompt 处理团队指令
             context_text = ""
             if team_context_data:
                 context_text = "\n\n## 可用数据\n" + json.dumps(
@@ -183,16 +206,74 @@ class TeamAgentWrapper(BaseAgent):
                 )[:3000]
 
             prompt = f"{team_instruction}{context_text}"
-            response = self.call_llm(prompt, self._system_prompt_override)
+            system_prompt = self._get_system_prompt()
 
-            # 尝试解析为结构化数据
-            parsed = self._parse_json_response(response, default=None)
-            if parsed is not None:
-                return {"success": True, "data": parsed}
-            return {"success": True, "data": response}
+            # 递归能力：depth < max_depth 时使用 ToolUseRunner + research 工具
+            if self._recursion_depth < self._max_recursion_depth:
+                result = await self._process_with_research(prompt, system_prompt)
+            else:
+                # 退化为纯 call_llm
+                result = self._process_plain(prompt, system_prompt)
+
+            return result
 
         # 无 team_instruction，直接委派给原 agent
         return await self._wrapped_agent.process(input_data)
+
+    async def _process_with_research(self, prompt: str, system_prompt: str) -> Dict:
+        """使用 ToolUseRunner + research 工具处理指令"""
+        from core.recursive_chat import RESEARCH_TOOL_DEF, run_recursive_chat
+        from core.tool_use_runner import ToolUseRunner
+
+        research_logs = []
+
+        async def _execute_tool(tool_name: str, tool_input: Dict) -> Any:
+            """research 工具处理器"""
+            if tool_name == "research":
+                sub_result = await run_recursive_chat(
+                    query=tool_input.get("query", ""),
+                    context=tool_input.get("context", ""),
+                    depth=self._recursion_depth,
+                    max_depth=self._max_recursion_depth,
+                )
+                research_logs.append(sub_result.get("meta_summary", ""))
+                # 返回完整结果给 agent
+                return sub_result["result"]
+            return {"error": f"未知工具: {tool_name}"}
+
+        messages = [{"role": "user", "content": prompt}]
+
+        runner = ToolUseRunner(
+            client=self.llm_client,
+            model=self.config.model,
+            system_prompt=system_prompt,
+            tools=[RESEARCH_TOOL_DEF],
+            execute_tool=_execute_tool,
+            max_iterations=5,
+        )
+
+        response = await runner.run(messages)
+
+        # 记录元摘要
+        self._research_logs.extend(research_logs)
+
+        # 尝试解析为结构化数据
+        parsed = self._parse_json_response(response, default=None)
+        result = {"success": True, "data": parsed if parsed is not None else response}
+
+        if research_logs:
+            result["research_meta"] = research_logs
+
+        return result
+
+    def _process_plain(self, prompt: str, system_prompt: str) -> Dict:
+        """纯 call_llm 处理（无递归能力）"""
+        response = self.call_llm(prompt, system_prompt)
+
+        parsed = self._parse_json_response(response, default=None)
+        if parsed is not None:
+            return {"success": True, "data": parsed}
+        return {"success": True, "data": response}
 
 
 # ==================== Coordinator（LLM 协调者） ====================
@@ -398,6 +479,8 @@ def create_team_from_definition(
     team_def: TeamDefinition,
     app_config: dict,
     max_turns: int = None,
+    max_recursion_depth: int = 2,
+    recursion_depth: int = 0,
 ) -> Team:
     """
     从 TeamDefinition 创建 Team 实例
@@ -406,6 +489,8 @@ def create_team_from_definition(
         team_def: 预定义 Team
         app_config: 应用配置
         max_turns: 覆盖默认 max_turns
+        max_recursion_depth: agent 递归研究的最大深度
+        recursion_depth: 当前递归深度（由递归 chat 传入）
     """
     from core.registration import agent_factory
     from core.registry import get_registry
@@ -420,9 +505,13 @@ def create_team_from_definition(
 
         agent = agent_factory(reg.cls, app_config)
 
-        # Form 1: 覆盖 system prompt
-        if spec.system_prompt_override:
-            agent = TeamAgentWrapper(agent, spec.system_prompt_override)
+        # 始终用 TeamAgentWrapper 包装（提供递归研究能力）
+        agent = TeamAgentWrapper(
+            agent,
+            system_prompt_override=spec.system_prompt_override,
+            recursion_depth=recursion_depth,
+            max_recursion_depth=max_recursion_depth,
+        )
 
         members.append(TeamMember(
             role=spec.role,
@@ -445,6 +534,8 @@ def create_ad_hoc_team(
     agent_names: List[str],
     app_config: dict,
     max_turns: int = 10,
+    max_recursion_depth: int = 2,
+    recursion_depth: int = 0,
 ) -> Team:
     """
     动态创建 ad-hoc Team（Form 2: 跨插件协作）
@@ -456,6 +547,8 @@ def create_ad_hoc_team(
         agent_names: Agent 注册名列表
         app_config: 应用配置
         max_turns: 最大轮次
+        max_recursion_depth: agent 递归研究的最大深度
+        recursion_depth: 当前递归深度（由递归 chat 传入）
     """
     from core.registration import agent_factory
     from core.registry import get_registry
@@ -478,6 +571,13 @@ def create_ad_hoc_team(
         else:
             role = agent_name
             description = reg.description or ""
+
+        # 始终用 TeamAgentWrapper 包装（提供递归研究能力）
+        agent = TeamAgentWrapper(
+            agent,
+            recursion_depth=recursion_depth,
+            max_recursion_depth=max_recursion_depth,
+        )
 
         members.append(TeamMember(
             role=role,

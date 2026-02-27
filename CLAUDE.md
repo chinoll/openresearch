@@ -66,7 +66,8 @@ core/  (shared infrastructure)
 ├── tool_use_runner.py # ToolUseRunner (generic Anthropic tool-use loop executor)
 ├── chat_router.py     # AI chat + Tool Use API (/api/chat) + built-in subagent tools (Team)
 ├── team.py            # Agent Team engine (TeamContext, TeamCoordinator, Team, factories)
-└── team_schemas.py    # COORDINATOR_DECISION_SCHEMA
+├── team_schemas.py    # COORDINATOR_DECISION_SCHEMA
+└── recursive_chat.py  # Recursive chat engine (Team agent research tool)
 ```
 
 ### LLM-Orchestrated Multi-Agent System
@@ -115,6 +116,18 @@ Team tools are built into `core/chat_router.py` (not a separate plugin):
 - `list_teams()` — list available teams and team-ready agents
 
 Prompts: `prompts/system/team_coordinator.txt` (system), `prompts/team/coordinator.txt` (per-turn decision template with `{{task_description}}`, `{{members_description}}`, `{{blackboard_summary}}`, `{{history_summary}}`, `{{current_turn}}`, `{{max_turns}}`).
+
+### Recursive Chat (Team Agent Research)
+`core/recursive_chat.py` enables Team agents to autonomously research external information via a `research` tool. When a Team agent needs to look up papers, extract knowledge, etc., it calls `research(query)` which spawns a recursive ToolUseRunner chat with full tool permissions.
+
+Key design:
+- **Recursion depth**: `max_recursion_depth` (default 2) configured at Team level. `depth < max`: agent has `research` tool; `depth >= max`: falls back to plain `call_llm`.
+- **Full permissions**: Recursive chat has access to all TOOL + subagent tools (including `run_team`, which creates sub-teams whose agents also get `research` at depth+1).
+- **Memory isolation**: Recursive chat produces two outputs: (1) `full_result` returned to the agent for reasoning, (2) `meta_summary` (tool call log, no LLM needed) recorded for system awareness. The recursive chat's conversation history is discarded after return (natural GC).
+- **`RESEARCH_TOOL_DEF`**: Anthropic tool_use definition for the `research` tool (internal to Team agents, not exposed to top-level chat).
+- **`TeamAgentWrapper`**: Always wraps Team member agents. When `depth < max_depth`, `process()` uses ToolUseRunner + `[RESEARCH_TOOL_DEF]`; otherwise falls back to `call_llm`.
+
+Prompt: `prompts/system/recursive_chat.txt` with `{{depth}}`/`{{max_depth}}` variables.
 
 ### Structured LLM Output
 `BaseAgent.call_llm_structured()` forces structured JSON output via:
