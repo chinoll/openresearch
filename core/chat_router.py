@@ -64,18 +64,23 @@ def _get_llm_client():
     return _llm_client, _llm_model
 
 _system_prompt_cache = None
+_system_prompt_cache_time = 0
+_SYSTEM_PROMPT_TTL = 300  # 5 minutes
 
 
 def _get_system_prompt() -> str:
-    """动态生成系统提示词：静态模板 + registry 扫描的工具能力"""
-    global _system_prompt_cache
-    if _system_prompt_cache is not None:
+    """动态生成系统提示词：静态模板 + registry 扫描的工具能力（带 TTL 缓存）"""
+    global _system_prompt_cache, _system_prompt_cache_time
+    import time
+    now = time.time()
+    if _system_prompt_cache is not None and (now - _system_prompt_cache_time) < _SYSTEM_PROMPT_TTL:
         return _system_prompt_cache
 
     base = load_prompt("system/chat_assistant")
     registry = get_registry()
     capabilities = registry.describe_capabilities()
     _system_prompt_cache = f"{base}\n\n## 可用工具\n{capabilities}"
+    _system_prompt_cache_time = now
     return _system_prompt_cache
 
 
@@ -135,12 +140,17 @@ async def chat(req: ChatRequest):
     messages.append({"role": "user", "content": req.message})
 
     async def generate():
+        from core.tool_use_runner import ToolUseRunner
+
         client, model = _get_llm_client()
 
-        # 多轮工具调用循环
+        _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations"}
+
+        # Use ToolUseRunner pattern with SSE-compatible callbacks
+        # For SSE we need fine-grained control per iteration, so we keep a customized loop
         current_messages = messages.copy()
 
-        for _ in range(5):  # 最多 5 轮工具调用
+        for _iteration in range(15):
             response = client.messages.create(
                 model=model,
                 max_tokens=2048,
@@ -158,19 +168,14 @@ async def chat(req: ChatRequest):
                 elif block.type == "tool_use":
                     tool_calls.append(block)
 
-            # 流式发送文本
             if text_content:
                 yield f"data: {json.dumps({'type': 'text', 'content': text_content})}\n\n"
 
-            # 如果没有工具调用，结束
             if not tool_calls or response.stop_reason == "end_turn":
                 break
 
-            # 执行工具调用
-            _LONG_RUNNING_TOOLS = {"ingest_paper", "extract_knowledge", "analyze_relations"}
             tool_results = []
             for tool_call in tool_calls:
-                # 通知前端正在调用工具
                 yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_call.name, 'input': tool_call.input})}\n\n"
 
                 if tool_call.name in _LONG_RUNNING_TOOLS:
@@ -178,7 +183,6 @@ async def chat(req: ChatRequest):
 
                 result = await execute_tool(tool_call.name, dict(tool_call.input))
 
-                # 通知前端工具调用结果
                 yield f"data: {json.dumps({'type': 'tool_result', 'name': tool_call.name, 'result': result})}\n\n"
 
                 tool_results.append({
@@ -187,9 +191,10 @@ async def chat(req: ChatRequest):
                     "content": json.dumps(result, ensure_ascii=False)
                 })
 
-            # 将工具调用和结果加入消息历史
             current_messages.append({"role": "assistant", "content": response.content})
             current_messages.append({"role": "user", "content": tool_results})
+        else:
+            yield f"data: {json.dumps({'type': 'text', 'content': '[已达到最大工具调用轮数，自动停止]'})}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

@@ -16,14 +16,12 @@ from plugins.knowledge.knowledge_graph import KnowledgeGraph
 class RelationAnalyzerAgent(BaseAgent):
     """关系分析 Agent - 构建论文关系网络"""
 
-    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema
+    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema, TeamExport
     REGISTRATION = ModuleRegistration(
         name="relation_analyzer",
         module_type=ModuleType.AGENT,
         display_name="关系分析 Agent",
         description="分析论文之间的引用、相似度、主题关系，构建知识网络",
-        pipeline_stage="analysis",
-        pipeline_order=30,
         dependencies=[
             DependencySpec(name="vector_store"),
             DependencySpec(name="knowledge_graph"),
@@ -51,8 +49,9 @@ class RelationAnalyzerAgent(BaseAgent):
                 tags=["analysis", "comparison", "paper"],
             ),
         ],
+        team_export=TeamExport(default_role="analyzer", description="分析论文关系和影响力"),
     )
-    del ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema
+    del ModuleRegistration, ModuleType, Capability, DependencySpec, InputSchema, OutputSchema, TeamExport
 
     def __init__(self,
                  config: AgentConfig,
@@ -237,6 +236,8 @@ class RelationAnalyzerAgent(BaseAgent):
         """分析主题和研究领域"""
         self.log(f"Analyzing topics for {paper_id}...")
 
+        from plugins.knowledge.schemas import TOPICS_SCHEMA
+
         prompt = load_prompt(
             "analyzer/topics",
             title=paper_data.get('title', 'N/A'),
@@ -244,8 +245,9 @@ class RelationAnalyzerAgent(BaseAgent):
             keywords=', '.join(paper_data.get('keywords', [])),
         )
 
-        response = self.call_llm(prompt, self._get_system_prompt())
-        return self._parse_json_response(response, default={})
+        return self.call_llm_structured(prompt, TOPICS_SCHEMA,
+                                        tool_name="analyze_topics",
+                                        system_prompt=self._get_system_prompt())
 
     async def _analyze_evolution(self, paper_id: str, paper_data: Dict) -> Dict:
         """分析研究演进"""
@@ -266,15 +268,18 @@ class RelationAnalyzerAgent(BaseAgent):
 **被引用**: {len(citing_papers)} 次
 """
 
+        from plugins.knowledge.schemas import EVOLUTION_SCHEMA
+
         prompt = load_prompt(
             "analyzer/evolution",
             title=paper_data.get('title', 'N/A'),
             evolution_context=evolution_context,
-            abstract=paper_data.get('abstract', '')[:300],
+            abstract=paper_data.get('abstract', '')[:2000],
         )
 
-        response = self.call_llm(prompt, self._get_system_prompt())
-        result = self._parse_json_response(response, default={})
+        result = self.call_llm_structured(prompt, EVOLUTION_SCHEMA,
+                                          tool_name="analyze_evolution",
+                                          system_prompt=self._get_system_prompt())
 
         result['cited_count'] = len(cited_papers)
         result['citing_count'] = len(citing_papers)
@@ -362,7 +367,7 @@ class RelationAnalyzerAgent(BaseAgent):
                     'id': pid,
                     'title': paper.get('title', 'Unknown'),
                     'year': paper.get('year'),
-                    'abstract': paper.get('abstract', '')[:300]
+                    'abstract': paper.get('abstract', '')[:2000]
                 })
 
         if len(papers_info) < 2:
@@ -375,8 +380,11 @@ class RelationAnalyzerAgent(BaseAgent):
             papers_formatted=self._format_papers_for_comparison(papers_info),
         )
 
-        response = self.call_llm(prompt, self._get_system_prompt())
-        comparison = self._parse_json_response(response, default={})
+        from plugins.knowledge.schemas import COMPARE_PAPERS_SCHEMA
+
+        comparison = self.call_llm_structured(prompt, COMPARE_PAPERS_SCHEMA,
+                                             tool_name="compare_papers",
+                                             system_prompt=self._get_system_prompt())
 
         comparison['papers_compared'] = [p['id'] for p in papers_info]
         comparison['num_papers'] = len(papers_info)
@@ -388,24 +396,6 @@ class RelationAnalyzerAgent(BaseAgent):
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
         return load_prompt("system/analyzer")
-
-    def _parse_json_response(self, response: str, default: Dict = None) -> Dict:
-        """解析 JSON 响应"""
-        import re
-        try:
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(1))
-
-            start = response.find('{')
-            end = response.rfind('}')
-            if start != -1 and end != -1:
-                return json.loads(response[start:end+1])
-
-        except Exception as e:
-            self.log(f"Error parsing JSON: {e}", "warning")
-
-        return default or {}
 
     def _format_papers_for_comparison(self, papers_info: List[Dict]) -> str:
         """格式化论文用于对比"""

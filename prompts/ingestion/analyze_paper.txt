@@ -1,4 +1,4 @@
-请分析以下论文内容：
+请对以下论文进行快速分类和摘要。
 
 **标题**: {{title}}
 
@@ -14,15 +14,16 @@
 **公式数量**: {{equations_count}}
 **图表数量**: {{figures_count}}
 
-请提供以下分析（以 JSON 格式输出）：
+## 指导
 
+- 只提供简洁摘要、研究领域和论文类型，不做深度分析
+- 研究领域使用标准缩写（NLP, CV, RL, Robotics, Systems 等）
+- 论文类型从以下选择：empirical（实验性）、theoretical（理论性）、survey（综述）、system（系统设计）
+- summary 控制在 3-5 句话
+
+请以 JSON 格式输出：
 {
     "summary": "简洁的论文总结（3-5句话）",
-    "key_contributions": ["核心贡献1", "核心贡献2"],
-    "methodology": "使用的主要方法和技术",
-    "research_questions": ["研究问题1", "研究问题2"],
-    "limitations": ["局限性1", "局限性2"],
-    "future_work": "未来研究方向",
-    "keywords": ["关键词1", "关键词2"],
-    "research_area": "研究领域（如：NLP, CV, RL等）"
+    "research_area": "研究领域",
+    "paper_type": "论文类型"
 }

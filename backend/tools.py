@@ -56,6 +56,7 @@ def _capability_to_schema(cap) -> Dict[str, Any]:
             "bool": "boolean",
             "boolean": "boolean",
             "array": "array",
+            "object": "object",
         }
         json_type = type_map.get(field.type, "string")
         prop["type"] = json_type

@@ -15,13 +15,12 @@ from plugins.ideas.manager import IdeasManager, Idea
 class InsightAgent(BaseAgent):
     """研究洞察 Agent - 纯文本记忆管理"""
 
-    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec
+    from core.registry import ModuleRegistration, ModuleType, Capability, DependencySpec, TeamExport
     REGISTRATION = ModuleRegistration(
         name="insight_agent",
         module_type=ModuleType.AGENT,
         display_name="研究洞察 Agent",
         description="管理研究想法，发现想法之间的联系，综合多个想法生成高层洞察",
-        pipeline_stage=None,  # 不属于主流水线
         dependencies=[
             DependencySpec(name="ideas_manager"),
         ],
@@ -32,8 +31,9 @@ class InsightAgent(BaseAgent):
             Capability(name="synthesize", description="综合多个想法生成高层洞察", tags=["idea", "synthesize"]),
             Capability(name="review_session", description="回顾阅读会话", tags=["session", "review"]),
         ],
+        team_export=TeamExport(default_role="insight_specialist", description="综合想法生成研究洞察"),
     )
-    del ModuleRegistration, ModuleType, Capability, DependencySpec
+    del ModuleRegistration, ModuleType, Capability, DependencySpec, TeamExport
 
     def __init__(self,
                  config: AgentConfig,
@@ -137,6 +137,8 @@ class InsightAgent(BaseAgent):
 
     async def _enhance_idea(self, title: str, content: str, paper_id: str = None) -> Dict:
         """使用 AI 增强想法"""
+        from plugins.knowledge.schemas import ENHANCE_IDEA_SCHEMA
+
         prompt = load_prompt(
             "insight/enhance_idea",
             title=title,
@@ -144,8 +146,14 @@ class InsightAgent(BaseAgent):
             paper_id=paper_id or 'N/A',
         )
 
-        response = self.call_llm(prompt, self._get_system_prompt())
-        return self._parse_json_response(response, default={'tags': [], 'refined_content': content})
+        result = self.call_llm_structured(prompt, ENHANCE_IDEA_SCHEMA,
+                                          tool_name="enhance_idea",
+                                          system_prompt=self._get_system_prompt())
+        if not result.get('refined_content'):
+            result['refined_content'] = content
+        if not result.get('tags'):
+            result['tags'] = []
+        return result
 
     async def _find_related_ideas(self, input_data: Dict) -> Dict:
         """
@@ -457,24 +465,7 @@ class InsightAgent(BaseAgent):
         """获取系统提示词"""
         return load_prompt("system/insight")
 
-    def _parse_json_response(self, response: str, default: Dict = None) -> Dict:
-        """解析 JSON 响应"""
-        import re
-        try:
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(1))
-
-            start = response.find('{')
-            end = response.rfind('}')
-            if start != -1 and end != -1:
-                return json.loads(response[start:end+1])
-
-        except Exception as e:
-            self.log(f"Error parsing JSON: {e}", "warning")
-
-        return default or {}
-
+    # _parse_json_response 已统一到 BaseAgent
 
 # 使用示例
 if __name__ == "__main__":

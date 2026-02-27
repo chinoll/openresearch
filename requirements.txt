@@ -38,6 +38,9 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 pandas>=2.0.0
 
+# Schema validation (optional, for structured LLM output)
+jsonschema>=4.0.0
+
 # Utilities
 tqdm>=4.66.0
 python-magic>=0.4.27

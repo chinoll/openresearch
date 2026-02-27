@@ -10,6 +10,16 @@
 
 **公式数量**: {{equations_count}}
 
+{{prior_context}}
+
+## 提取指导
+
+- **方法层次**：先描述总体方法论（如"基于 Transformer 的序列到序列模型"），再描述具体技术（如"multi-head attention + positional encoding"）。
+- **模型架构**：描述模型的核心组件和数据流，不只列名称。
+- **数据集和指标**：使用论文中的精确名称（如"BLEU-4"而非"BLEU"）。
+- **实现细节**：包含关键超参数（学习率、batch size 等），如果论文提供了的话。
+- **缺失信息**：对于论文未提及的字段，填写空字符串或空数组。
+
 请详细说明：
 1. 主要方法和技术
 2. 算法/模型架构
@@ -21,9 +31,9 @@
 {
   "approach": "总体方法概述",
   "techniques": ["技术1", "技术2"],
-  "model_architecture": "模型架构描述",
+  "model_architecture": "模型架构描述（含核心组件和数据流）",
   "datasets": ["数据集1", "数据集2"],
   "evaluation_metrics": ["指标1", "指标2"],
-  "implementation_details": "实现细节"
+  "implementation_details": "关键实现细节（超参数等）"
 }
 ```

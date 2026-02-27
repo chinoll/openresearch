@@ -22,8 +22,6 @@ class PaperIngestionAgent(BaseAgent):
         module_type=ModuleType.AGENT,
         display_name="论文摄入 Agent",
         description="下载和解析论文，支持 arXiv TeX 源文件和本地 PDF/TeX",
-        pipeline_stage="ingestion",
-        pipeline_order=10,
         dependencies=[
             DependencySpec(name="arxiv_downloader"),
             DependencySpec(name="tex_parser"),
@@ -121,6 +119,9 @@ class PaperIngestionAgent(BaseAgent):
         analysis = await self._analyze_with_llm(parsed_data)
         parsed_data['ai_analysis'] = analysis
 
+        # 注入 paper_id 供 pipeline 下游使用
+        parsed_data['paper_id'] = arxiv_id.replace('.', '_')
+
         # 保存处理结果
         self._save_processed_data(arxiv_id, parsed_data)
 
@@ -151,6 +152,9 @@ class PaperIngestionAgent(BaseAgent):
         # AI 分析
         analysis = await self._analyze_with_llm(parsed_data)
         parsed_data['ai_analysis'] = analysis
+
+        # 注入 paper_id 供 pipeline 下游使用
+        parsed_data['paper_id'] = path.stem.replace('.', '_')
 
         self.log(f"✓ Successfully processed local file: {file_path}")
         return parsed_data
@@ -199,45 +203,25 @@ class PaperIngestionAgent(BaseAgent):
         }
 
     async def _analyze_with_llm(self, parsed_data: Dict) -> Dict:
-        """使用 LLM 对论文进行深度分析"""
+        """使用 LLM 对论文进行快速分类和摘要（深度分析由 ExtractorAgent 负责）"""
         if not self.llm_client:
             self.log("LLM not available, skipping AI analysis", "warning")
             return {
                 'summary': '',
-                'key_contributions': [],
-                'methodology': '',
-                'limitations': [],
-                'research_direction': ''
+                'research_area': '',
+                'paper_type': '',
             }
 
         self.log("Performing AI analysis...")
 
-        # 构建分析提示词
-        prompt = self._build_analysis_prompt(parsed_data)
+        from plugins.knowledge.schemas import INGESTION_ANALYSIS_SCHEMA
 
+        prompt = self._build_analysis_prompt(parsed_data)
         system_prompt = load_prompt("system/ingestion")
 
-        try:
-            response = self.call_llm(prompt, system_prompt)
-
-            # 解析 JSON 响应
-            # 尝试提取 JSON（可能包含在 markdown 代码块中）
-            import re
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
-            if json_match:
-                analysis = json.loads(json_match.group(1))
-            else:
-                # 尝试直接解析
-                analysis = json.loads(response)
-
-            return analysis
-
-        except Exception as e:
-            self.log(f"Error in AI analysis: {e}", "error")
-            return {
-                'summary': response[:500] if response else '',
-                'error': str(e)
-            }
+        return self.call_llm_structured(prompt, INGESTION_ANALYSIS_SCHEMA,
+                                        tool_name="analyze_paper",
+                                        system_prompt=system_prompt)
 
     def _build_analysis_prompt(self, parsed_data: Dict) -> str:
         """构建 AI 分析的提示词"""

@@ -241,21 +241,19 @@ data/
 ```python
 import asyncio
 from pathlib import Path
-from main import DeepResearchSystem
+from main import TaskSystem
 
 async def main():
-    # 初始化系统
-    system = DeepResearchSystem(config_path=Path("config/config.yaml"))
+    system = TaskSystem(config_path=Path("config/config.yaml"))
 
-    # 添加论文
-    result = await system.add_paper_from_arxiv("2301.00001")
+    # 单次任务（LLM 自动编排工具调用）
+    await system.chat_execute("分析论文 2301.00001")
 
-    # 搜索
-    results = await system.search_papers("transformer", top_k=5)
-
-    # 查看统计
-    stats = system.orchestrator.get_statistics()
-    print(stats)
+    # 运行通用 pipeline
+    result = await system.run_pipeline({
+        "source": "arxiv",
+        "identifier": "2301.00001",
+    })
 
 asyncio.run(main())
 ```

@@ -75,6 +75,13 @@ class ConstructorParam:
 
 
 @dataclass
+class TeamExport:
+    """跨插件 Team 导出声明 — 声明 agent 可参与 Team 协作"""
+    default_role: str           # 在 team 中的默认角色名
+    description: str = ""       # 在 team 中的能力描述
+
+
+@dataclass
 class ModuleRegistration:
     """模块注册元数据"""
 
@@ -96,13 +103,12 @@ class ModuleRegistration:
     # ===== 构造参数 =====
     constructor_params: List[ConstructorParam] = field(default_factory=list)
 
-    # ===== Agent 专用 =====
-    pipeline_stage: Optional[str] = None   # "ingestion" | "extraction" | "analysis"
-    pipeline_order: int = 0                # 越小越先执行
-
     # ===== Router 专用 =====
     api_prefix: Optional[str] = None
     api_tags: List[str] = field(default_factory=list)
+
+    # ===== Team 协作 =====
+    team_export: Optional[TeamExport] = None   # 声明可参与 Team 协作
 
     # ===== 实例化 =====
     cls: Optional[Type] = None             # 自动绑定
@@ -133,6 +139,7 @@ class Registry:
         self._capability_index: Dict[str, str] = {}   # capability_name -> module_name
         self._tag_index: Dict[str, List[str]] = {}     # tag -> [module_names]
         self._source_modules: Dict[str, Any] = {}      # reg_name -> Python module 对象
+        self._team_definitions: Dict[str, Any] = {}    # team_name -> TeamDefinition
 
     def register(self, reg: ModuleRegistration):
         """注册模块（同 class 重复注册静默跳过）"""
@@ -192,14 +199,6 @@ class Registry:
         """按标签查找模块列表"""
         module_names = self._tag_index.get(tag, [])
         return [self._registrations[n] for n in module_names if n in self._registrations]
-
-    def get_pipeline_modules(self, stage: str = None) -> List[ModuleRegistration]:
-        """获取按 pipeline_order 排序的 Agent 列表"""
-        agents = self.get_all_registrations(ModuleType.AGENT)
-        if stage:
-            agents = [a for a in agents if a.pipeline_stage == stage]
-        agents.sort(key=lambda a: a.pipeline_order)
-        return agents
 
     def describe_capabilities(self) -> str:
         """生成人类可读的能力描述文本（供 orchestrator LLM 路由）"""
@@ -329,6 +328,14 @@ class Registry:
                 self.register(obj)
                 self._source_modules[obj.name] = module
 
+        # 模块级别 TEAM_DEFINITIONS（Team 预定义列表）
+        team_defs = getattr(module, 'TEAM_DEFINITIONS', None)
+        if team_defs and isinstance(team_defs, list):
+            for td in team_defs:
+                if hasattr(td, 'name') and td.name:
+                    self._team_definitions[td.name] = td
+                    logger.debug(f"Registered team definition: {td.name}")
+
     def get_router_objects(self) -> list:
         """返回 [(reg, router_obj), ...] — 所有 ROUTER 类型注册及其 router 对象"""
         result = []
@@ -358,6 +365,23 @@ class Registry:
                 handlers[domain] = module.get_stats
         return handlers
 
+    # ==================== Team 查询 ====================
+
+    def get_team_definition(self, name: str):
+        """按名称获取 TeamDefinition"""
+        return self._team_definitions.get(name)
+
+    def get_all_team_definitions(self) -> Dict[str, Any]:
+        """返回所有已注册的 TeamDefinition"""
+        return dict(self._team_definitions)
+
+    def get_team_ready_agents(self) -> List[ModuleRegistration]:
+        """返回所有声明了 team_export 的 Agent 注册"""
+        return [
+            reg for reg in self._registrations.values()
+            if reg.team_export is not None
+        ]
+
     def reset(self):
         """重置注册中心（用于测试）"""
         self._registrations.clear()
@@ -365,6 +389,7 @@ class Registry:
         self._capability_index.clear()
         self._tag_index.clear()
         self._source_modules.clear()
+        self._team_definitions.clear()
 
 
 # ==================== 辅助函数 ====================

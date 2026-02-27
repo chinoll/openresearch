@@ -1,0 +1,29 @@
+## 当前任务
+
+{{task_description}}
+
+## 团队成员
+
+{{members_description}}
+
+## 黑板状态（已有数据）
+
+{{blackboard_summary}}
+
+## 执行历史
+
+{{history_summary}}
+
+## 进度
+
+当前第 {{current_turn}} 轮，最多 {{max_turns}} 轮。
+
+## 请做出决策
+
+根据以上信息，决定下一步行动：
+- 如果任务已完成或所有必要结果已在黑板上，选择 "terminate"
+- 如果还需要继续，选择 "delegate" 并指定：
+  - member_role: 委派给哪个成员
+  - input_keys: 从黑板传递哪些数据给该成员
+  - instruction: 给成员的具体指令
+  - output_key: 结果写入黑板的 key 名

@@ -15,12 +15,9 @@ Primary language is Chinese for UI text and comments; code identifiers and docs 
 pip install -r requirements.txt
 
 # CLI usage
-python main.py --arxiv 2301.00001              # Add arXiv paper (full analysis)
-python main.py --arxiv 2301.00001 --quick       # Quick mode (ingestion only)
-python main.py --local /path/to/paper.pdf       # Add local file
-python main.py --list                           # List papers
-python main.py --stats                          # Show statistics
-python main.py --search "query"                 # Semantic search
+python main.py                                  # Interactive chat (LLM orchestrates tasks)
+python main.py "your task description"          # Single task execution
+python main.py --server                         # Start FastAPI server (port 8000)
 
 # FastAPI server
 python -m uvicorn backend.main:app --reload --port 8000
@@ -54,31 +51,89 @@ plugins/
 ├── knowledge/       # Knowledge base domain
 │   ├── vector_store.py, knowledge_graph.py  (services)
 │   ├── extractor_agent.py, analyzer_agent.py (agents)
+│   ├── schemas.py                     (JSON Schemas for structured LLM output)
+│   ├── teams.py                       (Team definitions: knowledge_review)
 ├── insights/        # Insight domain
 │   ├── manager.py   └── router.py
 ├── questions/       # Question domain
 │   ├── manager.py   └── router.py
 ├── ideas/           # Ideas domain
 │   ├── manager.py, structured.py, agent.py, router.py
-core/  (shared infrastructure + orchestration)
+core/  (shared infrastructure)
 ├── registry.py        # Module registry (plugin system core)
 ├── registration.py    # @register_module decorator + agent_factory
-├── base_agent.py      # BaseAgent ABC (LLM client, memory, call_llm())
-├── orchestrator.py    # OrchestratorAgent (pipeline coordination, LLM routing)
-└── chat_router.py     # AI chat + Tool Use API (/api/chat)
+├── base_agent.py      # BaseAgent ABC (LLM client, memory, call_llm(), call_llm_structured())
+├── tool_use_runner.py # ToolUseRunner (generic Anthropic tool-use loop executor)
+├── chat_router.py     # AI chat + Tool Use API (/api/chat)
+├── team.py            # Agent Team engine (TeamContext, TeamCoordinator, Team, factories)
+├── team_schemas.py    # COORDINATOR_DECISION_SCHEMA
+└── team_router.py     # Team tools (run_team, run_ad_hoc_team, list_teams)
 ```
 
-### Multi-Agent Pipeline
+### LLM-Orchestrated Multi-Agent System
+All task orchestration is done by the LLM via tool-use — no fixed pipeline. The LLM autonomously decides which agents to invoke and in what order:
+
 ```
-Orchestrator (core/orchestrator.py)
-├── Ingestion Agent (plugins/papers/agent.py) → ArxivDownloader + TexParser
-├── Extractor Agent (plugins/knowledge/extractor_agent.py) → contributions, methodology, keywords
-└── Analyzer Agent (plugins/knowledge/analyzer_agent.py)   → citations, similarity, clustering
+TaskSystem (main.py) / ChatRouter (core/chat_router.py)
+  └── ToolUseRunner (core/tool_use_runner.py)
+        ├── ingest_paper    → PaperIngestionAgent
+        ├── extract_knowledge → KnowledgeExtractorAgent
+        ├── add_to_knowledge_base → VectorStore + KnowledgeGraph
+        ├── analyze_relations → RelationAnalyzerAgent
+        └── search_papers   → VectorStore
 ```
 
-All agents extend `BaseAgent` (`core/base_agent.py`) which handles LLM client initialization (Anthropic or OpenAI), conversation memory, and provides `call_llm()`. Each agent implements `async process(input_data) -> dict`.
+All agents extend `BaseAgent` (`core/base_agent.py`) which handles LLM client initialization (Anthropic or OpenAI), conversation memory, and provides:
+- `call_llm(prompt, system_prompt, max_retries)` — text response with exponential backoff retry
+- `call_llm_structured(prompt, schema, tool_name)` — forced structured JSON output via tool_use/function_calling
+- `_parse_json_response(response)` — bracket-depth JSON extraction from text (unified, replaces per-agent copies)
 
-The `DeepResearchSystem` class in `main.py` is the CLI entry point — it creates the orchestrator which in turn initializes all sub-agents, the vector store, and the knowledge graph.
+Each agent implements `async process(input_data) -> dict`.
+
+The `TaskSystem` class in `main.py` is the CLI entry point — a zero-domain-knowledge task runner that delegates to LLM + tool-use via `ToolUseRunner`.
+
+### ToolUseRunner
+`core/tool_use_runner.py` is a generic, callback-driven Anthropic tool-use loop executor extracted from `chat_router.py` and `main.py`. It provides:
+- `max_iterations=15` safety limit
+- Callback hooks: `on_text`, `on_tool_call`, `on_tool_result` for UI adaptation
+- Used by both CLI (`main.py`) and API (`chat_router.py`)
+
+### Agent Team System
+`core/team.py` provides multi-agent collaboration within a single task. Two forms:
+
+- **Form 1 (same-plugin)**: Same agent class, different system prompts for different roles. Uses `TeamAgentWrapper` to override `_get_system_prompt()` without modifying the original agent. Example: `knowledge_review` team (extractor + critic, both backed by `knowledge_extractor`).
+- **Form 2 (cross-plugin)**: Different plugin agents cooperate. Agents declare `team_export=TeamExport(default_role=..., description=...)` in their `REGISTRATION` to opt in.
+
+Key components:
+- **TeamContext** (shared blackboard): `write(key, value, writer)` / `read(key)` / `get_summary()` (token-efficient, only key+writer+summary)
+- **TeamCoordinator**: LLM-driven decision loop using `call_llm_structured()` + `COORDINATOR_DECISION_SCHEMA`. Decides `delegate(member_role, input_keys, instruction, output_key)` or `terminate`.
+- **Team**: Execution engine — loops coordinator decisions, delegates to members, passes data via blackboard. Safety limit via `max_turns`.
+- **TeamDefinition / TeamMemberSpec**: Declarative team definitions exported as `TEAM_DEFINITIONS` module-level constant (auto-discovered by registry).
+
+Tools exposed via `core/team_router.py`:
+- `run_team(team_name, task, initial_data?)` — run a predefined team
+- `run_ad_hoc_team(agent_names[], task, initial_data?)` — dynamically assemble and run
+- `list_teams()` — list available teams and team-ready agents
+
+Prompts: `prompts/system/team_coordinator.txt` (system), `prompts/team/coordinator.txt` (per-turn decision template with `{{task_description}}`, `{{members_description}}`, `{{blackboard_summary}}`, `{{history_summary}}`, `{{current_turn}}`, `{{max_turns}}`).
+
+### Structured LLM Output
+`BaseAgent.call_llm_structured()` forces structured JSON output via:
+- **Anthropic**: `tool_choice={"type": "tool", "name": ...}` with a virtual tool definition containing the JSON Schema
+- **OpenAI**: `tool_choice={"type": "function", ...}` with function calling
+
+JSON Schemas for all extraction/analysis tasks are centralized in `plugins/knowledge/schemas.py`.
+
+Optional `jsonschema` validation is performed if the package is installed.
+
+### Knowledge Extraction Pipeline
+`KnowledgeExtractorAgent` runs extraction in phased parallel groups:
+- **Phase A** (parallel): contributions, research_questions, keywords
+- **Phase B** (depends on A, parallel): methodology, concepts
+- **Phase C** (depends on A+B, parallel): findings, limitations, future_work
+- **Phase D** (depends on all): summary
+
+Each phase injects prior results as `{{prior_context}}` into subsequent prompts. High-impact extractions (contributions, methodology, findings) undergo reflection verification.
 
 ### Dual Storage
 - **Vector Store** (`plugins/knowledge/vector_store.py`): ChromaDB wrapper for semantic search over paper chunks
@@ -90,12 +145,18 @@ The `DeepResearchSystem` class in `main.py` is the CLI entry point — it create
 ### Prompt Template System
 All LLM prompts live in `prompts/` as `.txt` files organized by agent (e.g., `prompts/extractor/contributions.txt`). Load with `prompts.loader.load("extractor/contributions", title=..., abstract=...)` — uses `{{variable}}` substitution.
 
+Each extractor prompt includes:
+- Extraction guidance (what to look for, how to distinguish)
+- Missing-info handling instructions
+- `{{prior_context}}` variable for cross-task context sharing
+
 ### Plugin Auto-Loading
 All plugins are auto-discovered via `Registry.auto_discover(['core', 'plugins'])`. No hardcoded registration required — adding a new plugin to `plugins/` with `ROUTER_REGISTRATION` and/or class-level `REGISTRATION` is sufficient. The registry collects:
 - **Router objects** (`get_router_objects()`): auto-mounted in `backend/main.py`
 - **Tool handlers** (`get_all_tool_handlers()`): each router module exports a `TOOL_HANDLERS` dict, auto-collected by `core/chat_router.py`
 - **Stats handlers** (`get_stats_handlers()`): each router module's `get_stats()` function, auto-aggregated for `/api/stats`
-- **Pipeline agents** (`get_pipeline_modules()`): agents declare `pipeline_stage` in their REGISTRATION, auto-discovered by the orchestrator
+- **Team definitions** (`get_all_team_definitions()`): modules exporting `TEAM_DEFINITIONS` list, auto-collected by registry
+- **Team-ready agents** (`get_team_ready_agents()`): agents with `team_export` in their REGISTRATION
 
 ### REST API (FastAPI)
 `backend/main.py` auto-mounts all routers discovered by the registry from `plugins/*/router.py` and `core/chat_router.py` — all under `/api/`. Auto-generated docs at `/docs`. Both TUI and Web UI consume this API via a shared TypeScript client at `ui/shared/api/client.ts`.
